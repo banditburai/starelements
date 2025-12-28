@@ -14,6 +14,9 @@ dependencies = [
     "platformdirs>=4.0",
 ]
 
+[project.scripts]
+starelements = "starelements.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
