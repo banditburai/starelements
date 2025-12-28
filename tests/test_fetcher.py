@@ -232,3 +232,45 @@ class TestDownloadPackage:
         assert result.exists()
         # Scoped packages use __ instead of /
         assert "@org__pkg" in str(result.parent) or "org__pkg" in str(result.parent)
+
+    def test_download_package_custom_entry_point(self, tmp_path, monkeypatch):
+        """download_package uses custom entry_point when provided."""
+        from starelements.bundler.fetcher import download_package
+
+        js_content = "// custom entry point content"
+        captured_urls = []
+
+        def mock_get(url, **kwargs):
+            captured_urls.append(url)
+            response = MagicMock()
+            response.text = js_content
+            response.raise_for_status = MagicMock()
+            return response
+
+        monkeypatch.setattr("httpx.get", mock_get)
+
+        result = download_package("peaks.js", "3.4.2", tmp_path, entry_point="dist/peaks.js")
+
+        assert result.exists()
+        assert result.read_text() == js_content
+        # Should fetch the custom entry point, not package.json
+        assert len(captured_urls) == 1
+        assert "peaks.js@3.4.2/dist/peaks.js" in captured_urls[0]
+        # Should NOT have fetched package.json
+        assert not any("package.json" in url for url in captured_urls)
+
+    def test_download_package_custom_entry_preserves_filename(self, tmp_path, monkeypatch):
+        """download_package preserves original filename from custom entry."""
+        from starelements.bundler.fetcher import download_package
+
+        def mock_get(url, **kwargs):
+            response = MagicMock()
+            response.text = "// content"
+            response.raise_for_status = MagicMock()
+            return response
+
+        monkeypatch.setattr("httpx.get", mock_get)
+
+        result = download_package("pkg", "1.0.0", tmp_path, entry_point="dist/esm/module.mjs")
+
+        assert result.name == "module.mjs"

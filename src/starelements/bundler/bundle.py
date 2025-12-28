@@ -16,6 +16,7 @@ def bundle_package(
     version: str,
     output_path: Path,
     minify: bool = True,
+    entry_point: str | None = None,
 ) -> None:
     """Bundle a package into self-contained ESM.
 
@@ -24,6 +25,8 @@ def bundle_package(
         version: Version specifier (e.g., "3" or "3.2.1")
         output_path: Path to write bundled output
         minify: Whether to minify the output (default: True)
+        entry_point: Custom entry point path (e.g., "dist/peaks.js")
+                     If None, auto-detects from package.json
     """
     esbuild = ensure_esbuild()
     exact_version = resolve_version(package, version)
@@ -34,7 +37,7 @@ def bundle_package(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        entry = download_package(package, exact_version, tmp_path)
+        entry = download_package(package, exact_version, tmp_path, entry_point)
 
         cmd = [
             str(esbuild),

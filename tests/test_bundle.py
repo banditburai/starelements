@@ -20,7 +20,7 @@ class TestBundlePackage:
         def mock_resolve(*args):
             return "1.0.0"
 
-        def mock_download(pkg, ver, dest):
+        def mock_download(pkg, ver, dest, entry_point=None):
             entry = dest / "test-pkg" / "index.js"
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text("export default 'test';")
@@ -64,7 +64,7 @@ class TestBundlePackage:
         def mock_resolve(*args):
             return "1.0.0"
 
-        def mock_download(pkg, ver, dest):
+        def mock_download(pkg, ver, dest, entry_point=None):
             entry = dest / "test-pkg" / "index.js"
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text("export default 'test';")
@@ -108,7 +108,7 @@ class TestBundlePackage:
         def mock_resolve(*args):
             return "1.0.0"
 
-        def mock_download(pkg, ver, dest):
+        def mock_download(pkg, ver, dest, entry_point=None):
             entry = dest / "test-pkg" / "index.js"
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text("export default 'test';")
@@ -152,7 +152,7 @@ class TestBundlePackage:
         def mock_resolve(*args):
             return "1.0.0"
 
-        def mock_download(pkg, ver, dest):
+        def mock_download(pkg, ver, dest, entry_point=None):
             entry = dest / "test-pkg" / "index.js"
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text("export default 'test';")
@@ -185,7 +185,7 @@ class TestBundlePackage:
         def mock_resolve(*args):
             return "1.0.0"
 
-        def mock_download(pkg, ver, dest):
+        def mock_download(pkg, ver, dest, entry_point=None):
             entry = dest / "test-pkg" / "index.js"
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text("export default 'test';")

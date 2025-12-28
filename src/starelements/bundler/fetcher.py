@@ -62,18 +62,22 @@ def get_entry_point(package: str, version: str) -> str:
     return "index.js"
 
 
-def download_package(package: str, version: str, dest_dir: Path) -> Path:
+def download_package(
+    package: str, version: str, dest_dir: Path, entry_point: str | None = None
+) -> Path:
     """Download package entry point and return path.
 
     Args:
         package: Package name (e.g., "peaks.js" or "@org/pkg")
         version: Exact version string
         dest_dir: Directory to download to
+        entry_point: Custom entry point path (e.g., "dist/peaks.js")
+                     If None, auto-detects from package.json
 
     Returns:
         Path to downloaded entry point file
     """
-    entry = get_entry_point(package, version)
+    entry = entry_point if entry_point else get_entry_point(package, version)
     url = f"https://unpkg.com/{package}@{version}/{entry}"
 
     response = httpx.get(url, follow_redirects=True, timeout=FETCH_TIMEOUT)

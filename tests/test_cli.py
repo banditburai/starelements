@@ -25,7 +25,7 @@ output = "static/js"
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
 
@@ -61,7 +61,7 @@ output = "static/js"
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
 
@@ -89,7 +89,7 @@ output = "deep/nested/static/js"
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
 
@@ -120,7 +120,7 @@ output = "static"
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
 
@@ -193,7 +193,7 @@ output = "static/js"
             captured_args.append(("resolve", pkg, ver))
             return "1.0.0"
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             captured_args.append(("bundle", pkg, ver))
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
@@ -226,7 +226,7 @@ output = "static/js"
             captured_args.append(("resolve", pkg, ver))
             return "2.0.0"
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             captured_args.append(("bundle", pkg, ver))
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
@@ -256,7 +256,7 @@ output = "static/js"
 
         output_paths = []
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             output_paths.append(output)
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text("// bundled")
@@ -336,7 +336,7 @@ output = "static/js"
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
 
-        def mock_bundle(pkg, ver, output, minify):
+        def mock_bundle(pkg, ver, output, minify=True, entry_point=None):
             raise RuntimeError("esbuild failed: syntax error")
 
         monkeypatch.setattr(cli, "bundle_package", mock_bundle)
@@ -370,3 +370,88 @@ output = "static/js"
         captured = capsys.readouterr()
         assert "Error:" in captured.out
         assert "File operation failed" in captured.out
+
+
+class TestParsePackageSpec:
+    """Tests for parse_package_spec function."""
+
+    def test_simple_package(self):
+        """Simple package name defaults to latest version."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("preact")
+        assert name == "preact"
+        assert version == "latest"
+        assert entry is None
+
+    def test_package_with_version(self):
+        """Package with version is parsed correctly."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("preact@10.5.0")
+        assert name == "preact"
+        assert version == "10.5.0"
+        assert entry is None
+
+    def test_package_with_entry(self):
+        """Package with entry point but no version."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("peaks.js#dist/peaks.js")
+        assert name == "peaks.js"
+        assert version == "latest"
+        assert entry == "dist/peaks.js"
+
+    def test_package_with_version_and_entry(self):
+        """Package with both version and entry point."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("peaks.js@3#dist/peaks.js")
+        assert name == "peaks.js"
+        assert version == "3"
+        assert entry == "dist/peaks.js"
+
+    def test_scoped_package(self):
+        """Scoped package without version."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("@org/pkg")
+        assert name == "@org/pkg"
+        assert version == "latest"
+        assert entry is None
+
+    def test_scoped_package_with_version(self):
+        """Scoped package with version."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("@org/pkg@1.0.0")
+        assert name == "@org/pkg"
+        assert version == "1.0.0"
+        assert entry is None
+
+    def test_scoped_package_with_entry(self):
+        """Scoped package with entry point but no version."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("@org/pkg#lib/index.js")
+        assert name == "@org/pkg"
+        assert version == "latest"
+        assert entry == "lib/index.js"
+
+    def test_scoped_package_with_version_and_entry(self):
+        """Scoped package with both version and entry point."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("@shoelace-style/shoelace@2.0.0#dist/shoelace.js")
+        assert name == "@shoelace-style/shoelace"
+        assert version == "2.0.0"
+        assert entry == "dist/shoelace.js"
+
+    def test_entry_with_nested_path(self):
+        """Entry point with nested directory path."""
+        from starelements.cli import parse_package_spec
+
+        name, version, entry = parse_package_spec("pkg@1#dist/esm/index.mjs")
+        assert name == "pkg"
+        assert version == "1"
+        assert entry == "dist/esm/index.mjs"

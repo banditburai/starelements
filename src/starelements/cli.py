@@ -20,6 +20,45 @@ from .bundler import (
 )
 
 
+def parse_package_spec(pkg_spec: str) -> tuple[str, str, str | None]:
+    """Parse package specification into name, version, and optional entry point.
+
+    Formats supported:
+    - "pkg" → (pkg, "latest", None)
+    - "pkg@1.0" → (pkg, "1.0", None)
+    - "pkg@1.0#entry.js" → (pkg, "1.0", "entry.js")
+    - "pkg#entry.js" → (pkg, "latest", "entry.js")
+    - "@scope/pkg@1.0#entry.js" → (@scope/pkg, "1.0", "entry.js")
+
+    Returns:
+        Tuple of (package_name, version, entry_point)
+    """
+    # Extract entry point first (after #)
+    entry_point = None
+    if "#" in pkg_spec:
+        pkg_spec, entry_point = pkg_spec.rsplit("#", 1)
+
+    # Handle scoped packages (@org/name) vs version specifier
+    if pkg_spec.startswith("@"):
+        # Scoped package - find @ after the first /
+        slash_idx = pkg_spec.find("/")
+        if slash_idx != -1:
+            at_idx = pkg_spec.find("@", slash_idx)
+            if at_idx != -1:
+                name, version = pkg_spec[:at_idx], pkg_spec[at_idx + 1 :]
+            else:
+                name, version = pkg_spec, "latest"
+        else:
+            # Invalid scoped package, treat as-is
+            name, version = pkg_spec, "latest"
+    elif "@" in pkg_spec:
+        name, version = pkg_spec.rsplit("@", 1)
+    else:
+        name, version = pkg_spec, "latest"
+
+    return name, version, entry_point
+
+
 def cmd_bundle(project_root: Path | None = None) -> int:
     """Bundle JavaScript dependencies.
 
@@ -49,23 +88,7 @@ def cmd_bundle(project_root: Path | None = None) -> int:
         config.output.mkdir(parents=True, exist_ok=True)
 
         for pkg_spec in config.packages:
-            # Handle scoped packages (@org/name) vs version specifier
-            if pkg_spec.startswith("@"):
-                # Scoped package - find @ after the first /
-                slash_idx = pkg_spec.find("/")
-                if slash_idx != -1:
-                    at_idx = pkg_spec.find("@", slash_idx)
-                    if at_idx != -1:
-                        name, version = pkg_spec[:at_idx], pkg_spec[at_idx + 1 :]
-                    else:
-                        name, version = pkg_spec, "latest"
-                else:
-                    # Invalid scoped package, treat as-is
-                    name, version = pkg_spec, "latest"
-            elif "@" in pkg_spec:
-                name, version = pkg_spec.rsplit("@", 1)
-            else:
-                name, version = pkg_spec, "latest"
+            name, version, entry_point = parse_package_spec(pkg_spec)
 
             # Resolve to exact version
             exact_version = resolve_version(name, version)
@@ -74,8 +97,14 @@ def cmd_bundle(project_root: Path | None = None) -> int:
             output_name = name.replace("/", "__").replace(".", "_") + ".bundle.js"
             output_path = config.output / output_name
 
-            print(f"Bundling {name}@{exact_version}...")
-            bundle_package(name, exact_version, output_path, minify=config.minify)
+            if entry_point:
+                print(f"Bundling {name}@{exact_version} (entry: {entry_point})...")
+            else:
+                print(f"Bundling {name}@{exact_version}...")
+            bundle_package(
+                name, exact_version, output_path,
+                minify=config.minify, entry_point=entry_point
+            )
 
             # Update lock file
             lock.packages[name] = LockedPackage(
