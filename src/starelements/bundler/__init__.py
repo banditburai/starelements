@@ -12,6 +12,7 @@ from .fetcher import (
     get_entry_point,
     download_package,
 )
+from .bundle import bundle_package
 
 __all__ = [
     # Binary management
@@ -24,4 +25,6 @@ __all__ = [
     "resolve_version",
     "get_entry_point",
     "download_package",
+    # Bundling
+    "bundle_package",
 ]
