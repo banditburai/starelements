@@ -13,6 +13,13 @@ from .fetcher import (
     download_package,
 )
 from .bundle import bundle_package
+from .lock import (
+    LockFile,
+    LockedPackage,
+    compute_integrity,
+    read_lock_file,
+    write_lock_file,
+)
 
 __all__ = [
     # Binary management
@@ -27,4 +34,10 @@ __all__ = [
     "download_package",
     # Bundling
     "bundle_package",
+    # Lock file
+    "LockFile",
+    "LockedPackage",
+    "compute_integrity",
+    "read_lock_file",
+    "write_lock_file",
 ]
