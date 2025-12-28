@@ -20,6 +20,7 @@ from .lock import (
     read_lock_file,
     write_lock_file,
 )
+from .config import BundleConfig, load_config
 
 __all__ = [
     # Binary management
@@ -40,4 +41,7 @@ __all__ = [
     "compute_integrity",
     "read_lock_file",
     "write_lock_file",
+    # Config
+    "BundleConfig",
+    "load_config",
 ]
