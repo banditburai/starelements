@@ -9,7 +9,8 @@ class ElementDef:
     """Definition of a custom element generated from a Python class."""
 
     tag_name: str
-    imports: dict[str, str] = field(default_factory=dict)
+    imports: dict[str, str] = field(default_factory=dict)  # ESM dynamic imports
+    scripts: dict[str, str] = field(default_factory=dict)  # UMD scripts loaded as globals
     events: list[str] = field(default_factory=list)
     render_fn: Callable | None = None
     setup_fn: Callable | None = None

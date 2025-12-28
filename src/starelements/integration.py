@@ -43,34 +43,48 @@ def _generate_component_css(elem_def) -> list[str]:
     ]
 
 
+_SKELETON_CSS = (
+    ":root{--star-skel-1:#f0f0f0;--star-skel-2:#e8e8e8}"
+    "[data-theme=dark]{--star-skel-1:#2a2a2a;--star-skel-2:#333}"
+    "@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--star-skel-1:#2a2a2a;--star-skel-2:#333}}"
+    "@keyframes star-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}"
+)
+
+
 def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/starelements") -> tuple:
-    """Generate header elements (Style, Script, Templates) for components."""
+    """Generate header elements for starelements components.
+
+    Single pass through components to collect all header data.
+
+    Returns:
+        Tuple of (Style, Script, Templates...) for inclusion in page headers.
+    """
     from starhtml import Script, Style
 
     css_rules = []
+    templates = []
+    has_skeleton = False
 
-    has_skeleton = any(
-        getattr(cls, "_element_def", None) and cls._element_def.skeleton
-        for cls in component_classes
-    )
-    if has_skeleton:
-        css_rules.append(
-            # Skeleton colors as CSS custom properties with dark mode support
-            ":root{--star-skel-1:#f0f0f0;--star-skel-2:#e8e8e8}"
-            "[data-theme=dark]{--star-skel-1:#2a2a2a;--star-skel-2:#333}"
-            "@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--star-skel-1:#2a2a2a;--star-skel-2:#333}}"
-            "@keyframes star-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}"
-        )
-
+    # Single pass through all components
     for cls in component_classes:
         if not hasattr(cls, "_element_def"):
             raise ValueError(f"{cls} is not decorated with @element")
-        css_rules.extend(_generate_component_css(cls._element_def))
+
+        elem_def = cls._element_def
+
+        if elem_def.skeleton:
+            has_skeleton = True
+        css_rules.extend(_generate_component_css(elem_def))
+        templates.append(generate_template_ft(elem_def, cls))
+
+    # Build hdrs
+    if has_skeleton:
+        css_rules.insert(0, _SKELETON_CSS)
 
     return (
         Style("".join(css_rules)),
         Script(type="module", src=f"{base_url}/starelements.min.js"),
-        *(generate_template_ft(cls._element_def, cls) for cls in component_classes),
+        *templates,
     )
 
 
@@ -87,9 +101,11 @@ def register(app, *component_classes: Type, prefix: str = "/_pkg/starelements"):
     if not component_classes:
         return
 
+    hdrs = starelements_hdrs(*component_classes, base_url=prefix)
+
     app.register_package(
         "starelements",
         static_path=get_static_path(),
-        hdrs=starelements_hdrs(*component_classes, base_url=prefix),
+        hdrs=hdrs,
         prefix=prefix,
     )

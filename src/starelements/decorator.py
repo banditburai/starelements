@@ -48,6 +48,7 @@ def element(
 
     def decorator(cls: Type) -> Type:
         imports: dict[str, str] = {}
+        scripts: dict[str, str] = {}
         events: list[str] = []
         render_fn = None
         setup_fn = None
@@ -57,6 +58,8 @@ def element(
                 continue
             if name == "imports" and isinstance(value, dict):
                 imports = value
+            elif name == "scripts" and isinstance(value, dict):
+                scripts = value
             elif name == "Events" and inspect.isclass(value):
                 events = list(getattr(value, "__annotations__", {}).keys())
             elif name == "render" and callable(value):
@@ -78,6 +81,7 @@ def element(
         elem_def = ElementDef(
             tag_name=tag_name,
             imports=imports,
+            scripts=scripts,
             events=events,
             render_fn=render_fn,
             setup_fn=setup_fn,

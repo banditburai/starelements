@@ -47,14 +47,17 @@ def _clean_ft_internals(node: Any):
 def _extract_signals_from_ft(ft: Any) -> tuple[Any, dict[str, Any]]:
     """Extract signals from FT tree, returning cleaned tree and signal definitions."""
     try:
-        from starhtml.datastar import Signal
+        from starhtml.datastar import Signal, Expr
     except ImportError:
-        from starhtml import Signal
+        from starhtml import Signal, Expr
 
     signals: dict[str, Any] = {}
 
     def walk(node: Any) -> Any:
         if isinstance(node, Signal):
+            # Skip computed signals - StarHTML adds data-computed:* attrs automatically
+            if isinstance(node._initial, Expr):
+                return None
             signals[node._name] = {"initial": node._initial, "type": node.type_}
             return None
 
@@ -94,6 +97,7 @@ def generate_template_ft(elem_def: ElementDef, cls: Type):
 
     attrs = {f"data-star:{elem_def.tag_name}": True}
     attrs.update({f"data-import:{k}": v for k, v in elem_def.imports.items()})
+    attrs.update({f"data-script:{k}": v for k, v in elem_def.scripts.items()})
     if elem_def.shadow:
         attrs["data-shadow-open"] = True
     for name, info in signals.items():

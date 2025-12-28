@@ -29,7 +29,7 @@ class TestStarelementsHdrs:
             starelements_hdrs(NotAnElement)
 
     def test_returns_tuple_with_style_script_template(self):
-        """starelements_hdrs returns Style, Script, and Template elements."""
+        """starelements_hdrs returns tuple of (Style, Script, Template)."""
         from fastcore.xml import to_xml
 
         @element("hdrs-test")
