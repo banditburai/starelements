@@ -8,13 +8,16 @@ license = "MIT"
 authors = [
     { name = "Your Name", email = "you@example.com" }
 ]
-dependencies = []
+dependencies = ["starhtml"]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
 ]
+
+[tool.uv.sources]
+starhtml = { path = "../starhtml-upstream", editable = true }
 
 [build-system]
 requires = ["hatchling"]

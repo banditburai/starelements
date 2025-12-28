@@ -1,13 +1,13 @@
 """Tests for @element decorator."""
 
 import pytest
-from starelements import element, prop, signal
+from starelements import element
 from starelements.core import ElementDef
 
 
 class TestElementDecorator:
-    def test_decorator_returns_element_def(self):
-        """@element creates an ElementDef."""
+    def test_decorator_attaches_element_def(self):
+        """@element attaches an ElementDef to the class."""
         @element("test-component")
         class TestComponent:
             pass
@@ -16,31 +16,6 @@ class TestElementDecorator:
         assert isinstance(TestComponent._element_def, ElementDef)
         assert TestComponent._element_def.tag_name == "test-component"
 
-    def test_props_are_extracted(self):
-        """Props with type hints are extracted."""
-        @element("prop-test")
-        class PropTest:
-            title: str = prop(default="Hello")
-            count: int = prop(default=0, ge=0)
-
-        elem_def = PropTest._element_def
-        assert "title" in elem_def.props
-        assert "count" in elem_def.props
-        assert elem_def.props["title"].type_ == str
-        assert elem_def.props["count"].ge == 0
-
-    def test_signals_are_extracted(self):
-        """Internal signals are extracted."""
-        @element("signal-test")
-        class SignalTest:
-            is_active: bool = signal(False)
-            value: float = signal(0.0)
-
-        elem_def = SignalTest._element_def
-        assert "is_active" in elem_def.signals
-        assert "value" in elem_def.signals
-        assert elem_def.signals["is_active"].default is False
-
     def test_render_method_captured(self):
         """render() method is captured."""
         @element("render-test")
@@ -48,8 +23,7 @@ class TestElementDecorator:
             def render(self):
                 return "<div>Test</div>"
 
-        elem_def = RenderTest._element_def
-        assert elem_def.render_fn is not None
+        assert RenderTest._element_def.render_fn is not None
 
     def test_setup_method_captured(self):
         """setup() method is captured."""
@@ -58,8 +32,7 @@ class TestElementDecorator:
             def setup(self) -> str:
                 return "console.log('setup');"
 
-        elem_def = SetupTest._element_def
-        assert elem_def.setup_fn is not None
+        assert SetupTest._element_def.setup_fn is not None
 
     def test_imports_extracted(self):
         """imports dict is extracted."""
@@ -67,8 +40,7 @@ class TestElementDecorator:
         class ImportTest:
             imports = {"Peaks": "https://esm.sh/peaks.js"}
 
-        elem_def = ImportTest._element_def
-        assert elem_def.imports == {"Peaks": "https://esm.sh/peaks.js"}
+        assert ImportTest._element_def.imports == {"Peaks": "https://esm.sh/peaks.js"}
 
     def test_events_class_extracted(self):
         """Events inner class is extracted."""
@@ -78,9 +50,8 @@ class TestElementDecorator:
                 change: dict
                 click: None
 
-        elem_def = EventTest._element_def
-        assert "change" in elem_def.events
-        assert "click" in elem_def.events
+        assert "change" in EventTest._element_def.events
+        assert "click" in EventTest._element_def.events
 
     def test_shadow_option(self):
         """shadow=True enables Shadow DOM."""
@@ -89,3 +60,46 @@ class TestElementDecorator:
             pass
 
         assert ShadowTest._element_def.shadow is True
+
+    def test_decorated_class_is_callable(self):
+        """Decorated class can be called to create instances."""
+        @element("callable-test")
+        class CallableTest:
+            pass
+
+        instance = CallableTest()
+        assert instance is not None
+
+    def test_height_shorthand(self):
+        """height param sets min-height dimension."""
+        @element("height-test", height="100px")
+        class HeightTest:
+            pass
+
+        dims = HeightTest._element_def.dimensions
+        assert dims.get("min-height") == "100px"
+        assert dims.get("width") == "100%"  # default
+
+    def test_height_enables_skeleton(self):
+        """height param enables skeleton by default."""
+        @element("skeleton-auto-test", height="50px")
+        class SkeletonAutoTest:
+            pass
+
+        assert SkeletonAutoTest._element_def.skeleton is True
+
+    def test_no_height_no_skeleton(self):
+        """Without height, skeleton defaults to False."""
+        @element("no-skeleton-test")
+        class NoSkeletonTest:
+            pass
+
+        assert NoSkeletonTest._element_def.skeleton is False
+
+    def test_explicit_skeleton_override(self):
+        """skeleton=False overrides auto-enable from height."""
+        @element("explicit-no-skel", height="80px", skeleton=False)
+        class ExplicitNoSkel:
+            pass
+
+        assert ExplicitNoSkel._element_def.skeleton is False

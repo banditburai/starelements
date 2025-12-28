@@ -1,7 +1,7 @@
 """Tests for component factory function generation."""
 
 import pytest
-from starelements import element, prop, signal
+from starelements import element
 
 
 class TestFactoryFunction:
@@ -9,50 +9,62 @@ class TestFactoryFunction:
         """Decorated class can be called like a function."""
         @element("call-test")
         class CallTest:
-            title: str = prop(default="Hello")
+            pass
 
-        # Should not raise
-        result = CallTest(title="World")
+        result = CallTest()
         assert result is not None
 
-    def test_factory_returns_ft_like(self):
-        """Factory returns something that can be rendered to HTML."""
-        @element("ft-test")
-        class FTTest:
-            count: int = prop(default=0)
+    def test_factory_returns_element_instance(self):
+        """Factory with kwargs returns an ElementInstance."""
+        @element("instance-test")
+        class InstanceTest:
+            pass
 
-        result = FTTest(count=42)
-        html = str(result)
-        assert "ft-test" in html.lower() or "count" in html.lower()
+        result = InstanceTest(value=1)
+        assert hasattr(result, "tag_name")
+        assert result.tag_name == "instance-test"
 
-    def test_props_become_data_attr(self):
-        """Props are converted to data-attr bindings."""
+    def test_kwargs_become_attrs(self):
+        """Keyword args become element attributes."""
         @element("attr-test")
         class AttrTest:
-            value: int = prop(default=0)
+            pass
 
-        result = AttrTest(value=123)
+        result = AttrTest(count=42, title="Hello")
+        assert result.attrs.get("count") == 42
+        assert result.attrs.get("title") == "Hello"
+
+    def test_ft_produces_custom_element(self):
+        """__ft__() produces a custom element FT."""
+        @element("ft-test")
+        class FTTest:
+            pass
+
+        result = FTTest(value=123)
+        ft = result.__ft__()
+        assert ft.tag == "ft-test"
+
+    def test_str_renders_html(self):
+        """__str__ renders to HTML string."""
+        @element("str-test")
+        class StrTest:
+            pass
+
+        result = StrTest(data="test")
         html = str(result)
-        # Should have data-attr:value for static values
-        assert "123" in html or "value" in html.lower()
+        assert "<str-test" in html
+        assert "</str-test>" in html
 
-    def test_signal_props_become_data_attr_signal(self):
-        """Signal props use signal reference."""
-        @element("sig-attr-test")
-        class SigAttrTest:
-            count: int = prop(default=0)
+    def test_minimal_html_output(self):
+        """Factory produces minimal HTML (just tag with attrs)."""
+        from starhtml import Div, Signal
 
-        result = SigAttrTest(count="$counter")  # Signal reference as string
-        html = str(result)
-        assert "$counter" in html or "counter" in html.lower()
+        @element("minimal-test")
+        class MinimalTest:
+            def render(self):
+                return Div(Signal("count", 0))
 
-    def test_event_handlers_become_data_on(self):
-        """on_* kwargs become data-on handlers."""
-        @element("event-handler-test")
-        class EventHandlerTest:
-            class Events:
-                change: dict
-
-        result = EventHandlerTest(on_change="$value = evt.detail")
-        html = str(result)
-        assert "change" in html.lower()
+        html = str(MinimalTest(count=5))
+        # Should be just the tag with attrs, no pre-rendered content
+        # Includes visibility:hidden inline style for FOUC prevention
+        assert html == '<minimal-test count="5" style="visibility:hidden"></minimal-test>'

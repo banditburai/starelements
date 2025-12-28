@@ -1,6 +1,5 @@
 """Tests for JavaScript runtime."""
 
-import pytest
 from pathlib import Path
 
 
@@ -8,7 +7,7 @@ class TestRuntimeFile:
     def test_runtime_exists(self):
         """JavaScript runtime file exists."""
         runtime_path = Path(__file__).parent.parent / "src" / "starelements" / "static" / "starelements.js"
-        assert runtime_path.exists(), f"Runtime not found at {runtime_path}"
+        assert runtime_path.exists()
 
     def test_runtime_exports_init(self):
         """Runtime exports initStarElements function."""
@@ -28,10 +27,3 @@ class TestRuntimeFile:
         content = runtime_path.read_text()
         assert "connectedCallback" in content
         assert "disconnectedCallback" in content
-
-    def test_runtime_handles_signal_scoping(self):
-        """Runtime implements signal namespacing."""
-        runtime_path = Path(__file__).parent.parent / "src" / "starelements" / "static" / "starelements.js"
-        content = runtime_path.read_text()
-        assert "_namespace" in content
-        assert "_rewriteSignals" in content

@@ -1,135 +1,95 @@
-"""Integration helpers for StarHTML applications."""
+"""Integration with StarHTML applications."""
 
-from typing import Any, Type
 from pathlib import Path
+from typing import Type
 
-from .core import ElementDef
-from .generator import generate_template, generate_registration_script
-
-
-def get_component_assets(component_class: Type) -> dict[str, str]:
-    """
-    Get the HTML and JavaScript assets for a component.
-
-    Args:
-        component_class: A class decorated with @element
-
-    Returns:
-        Dict with 'template' and 'script' keys containing HTML strings
-
-    Example:
-        @element("my-comp")
-        class MyComp:
-            ...
-
-        assets = get_component_assets(MyComp)
-        # Include in page head:
-        # assets["template"] + assets["script"]
-    """
-    if not hasattr(component_class, "_element_def"):
-        raise ValueError(f"{component_class} is not decorated with @element")
-
-    elem_def = component_class._element_def
-
-    return {
-        "template": generate_template(elem_def, component_class),
-        "script": generate_registration_script(elem_def),
-    }
+from .decorator import get_registered_elements
+from .generator import generate_template_ft
 
 
-def get_runtime_script(base_url: str = "/static/js") -> str:
-    """
-    Get the script tag to include the starelements runtime.
-
-    Args:
-        base_url: Base URL path for static files
-
-    Returns:
-        HTML script tag
-    """
-    return f'<script type="module" src="{base_url}/starelements.js"></script>'
+def get_static_path() -> Path:
+    return Path(__file__).parent / "static"
 
 
 def get_runtime_path() -> Path:
-    """
-    Get the path to the starelements.js runtime file.
-
-    Returns:
-        Path to the JavaScript runtime
-    """
-    return Path(__file__).parent / "static" / "starelements.js"
+    return get_static_path() / "starelements.js"
 
 
-def register_with_app(app: Any, *component_classes: Type, route: str = "/static/js/starelements.js"):
-    """
-    Register starelements runtime with a FastHTML/Starlette app.
+def _generate_component_css(elem_def) -> list[str]:
+    """Generate CSS rules for a single component."""
+    name = elem_def.tag_name
+    dims = [f"{k}:{v}" for k, v in elem_def.dimensions.items()]
 
-    This adds a route to serve the starelements.js runtime.
+    # Two-phase FOUC prevention:
+    # - :not(:defined) hides before customElements.define() (web standard)
+    # - :not([data-star-ready]) hides until connectedCallback completes setup
+    hidden = f"{name}:not(:defined),{name}:not([data-star-ready])"
+    hidden_before = f"{name}:not(:defined)::before,{name}:not([data-star-ready])::before"
 
-    Args:
-        app: FastHTML or Starlette application
-        component_classes: Component classes to register
-        route: URL path for the runtime script
-
-    Example:
-        from fasthtml import FastHTML
-        from starelements import register_with_app
-
-        app = FastHTML()
-        register_with_app(app, MyComponent, OtherComponent)
-    """
-    runtime_content = get_runtime_path().read_text()
-
-    # Try to add route based on app type
-    if hasattr(app, "route"):
-        # FastHTML/Starlette style
-        @app.route(route)
-        def serve_runtime():
-            from starlette.responses import Response
-            return Response(
-                content=runtime_content,
-                media_type="application/javascript"
-            )
-    elif hasattr(app, "add_route"):
-        # Alternative API
-        def serve_runtime(request):
-            from starlette.responses import Response
-            return Response(
-                content=runtime_content,
-                media_type="application/javascript"
-            )
-        app.add_route(route, serve_runtime)
+    if elem_def.skeleton:
+        return [
+            f"{name}{{display:block}}",
+            f"{hidden}{{visibility:hidden;contain:content;position:relative;{';'.join(dims)}}}",
+            f"{hidden_before}{{"
+            "content:'';visibility:visible;position:absolute;inset:0;"
+            "background:linear-gradient(90deg,var(--star-skel-1) 0%,var(--star-skel-2) 50%,var(--star-skel-1) 100%);"
+            "background-size:200% 100%;animation:star-shimmer 1.5s infinite;border-radius:4px}",
+            f"{name}[data-star-ready]{{visibility:visible}}",
+        ]
+    return [
+        f"{name}{{display:block}}",
+        f"{hidden}{{visibility:hidden;contain:content;opacity:0;{';'.join(dims)}}}",
+        f"{name}[data-star-ready]{{opacity:1;transition:opacity .15s}}",
+    ]
 
 
-# Convenience function for head content
-def starelements_head(*component_classes: Type, base_url: str = "/static/js") -> str:
-    """
-    Generate all head content for starelements components.
+def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/starelements") -> tuple:
+    """Generate header elements (Style, Script, Templates) for components."""
+    from starhtml import Script, Style
 
-    Args:
-        component_classes: Component classes decorated with @element
-        base_url: Base URL for static files
+    css_rules = []
 
-    Returns:
-        HTML string with all templates and runtime script
+    has_skeleton = any(
+        getattr(cls, "_element_def", None) and cls._element_def.skeleton
+        for cls in component_classes
+    )
+    if has_skeleton:
+        css_rules.append(
+            # Skeleton colors as CSS custom properties with dark mode support
+            ":root{--star-skel-1:#f0f0f0;--star-skel-2:#e8e8e8}"
+            "[data-theme=dark]{--star-skel-1:#2a2a2a;--star-skel-2:#333}"
+            "@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--star-skel-1:#2a2a2a;--star-skel-2:#333}}"
+            "@keyframes star-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}"
+        )
 
-    Example:
-        def page():
-            return Html(
-                Head(
-                    NotStr(starelements_head(MyComponent, OtherComponent))
-                ),
-                Body(...)
-            )
-    """
-    parts = []
-
-    # Add runtime script
-    parts.append(get_runtime_script(base_url))
-
-    # Add templates for each component
     for cls in component_classes:
-        assets = get_component_assets(cls)
-        parts.append(assets["template"])
+        if not hasattr(cls, "_element_def"):
+            raise ValueError(f"{cls} is not decorated with @element")
+        css_rules.extend(_generate_component_css(cls._element_def))
 
-    return "\n".join(parts)
+    return (
+        Style("".join(css_rules)),
+        Script(type="module", src=f"{base_url}/starelements.min.js"),
+        *(generate_template_ft(cls._element_def, cls) for cls in component_classes),
+    )
+
+
+def register(app, *component_classes: Type, prefix: str = "/_pkg/starelements"):
+    """
+    Register starelements with a StarHTML app.
+
+    Example:
+        app, rt = star_app()
+        register(app)  # Registers all @element components
+    """
+    if not component_classes:
+        component_classes = tuple(get_registered_elements())
+    if not component_classes:
+        return
+
+    app.register_package(
+        "starelements",
+        static_path=get_static_path(),
+        hdrs=starelements_hdrs(*component_classes, base_url=prefix),
+        prefix=prefix,
+    )

@@ -1,142 +1,119 @@
 /**
  * starelements runtime - Web component bridge for Datastar
  *
- * Processes <template data-star:component-name> elements and registers
- * custom elements with proper signal scoping and lifecycle management.
+ * Supports client-side rendering (clones template) and hydration (adopts server content).
+ * Hydration detected via data-star-id attribute.
  */
 
-// Instance counter for unique IDs
 let instanceCounter = 0;
 
-/**
- * Initialize all starelements on the page.
- * Call this after DOM is ready.
- */
-export function initStarElements() {
-    // Find all template elements with data-star:* attribute
-    const templates = document.querySelectorAll('template[data-star\\:]');
+const toCamelCase = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
-    templates.forEach(template => {
-        // Extract component name from data-star:name attribute
-        const attrs = Array.from(template.attributes);
-        const starAttr = attrs.find(a => a.name.startsWith('data-star:'));
-        if (!starAttr) return;
-
-        const componentName = starAttr.name.replace('data-star:', '');
-        registerStarElement(componentName, template);
-    });
-}
-
-/**
- * Register a custom element from a template.
- */
-function registerStarElement(name, template) {
-    // Parse props from data-props:* attributes
-    const props = {};
-    Array.from(template.attributes).forEach(attr => {
-        if (attr.name.startsWith('data-props:')) {
-            const propName = attr.name.replace('data-props:', '');
-            props[propName] = parseCodec(attr.value);
-        }
-    });
-
-    // Parse imports from data-import:* attributes
-    const imports = {};
-    Array.from(template.attributes).forEach(attr => {
-        if (attr.name.startsWith('data-import:')) {
-            const alias = attr.name.replace('data-import:', '');
-            imports[alias] = attr.value;
-        }
-    });
-
-    // Check for shadow DOM
-    const useShadow = template.hasAttribute('data-shadow-open') ||
-                      template.hasAttribute('data-shadow-closed');
-    const shadowMode = template.hasAttribute('data-shadow-closed') ? 'closed' : 'open';
-
-    // Extract setup script
-    const scriptEl = template.content.querySelector('script:not([data-static])');
-    const setupCode = scriptEl ? scriptEl.textContent : '';
-
-    // Extract static script (runs once)
-    const staticScriptEl = template.content.querySelector('script[data-static]');
-    const staticCode = staticScriptEl ? staticScriptEl.textContent : '';
-
-    // Run static code once
-    if (staticCode) {
-        try {
-            new Function(staticCode)();
-        } catch (e) {
-            console.error(`[starelements] Static script error in ${name}:`, e);
+const extractPrefixedAttrs = (el, prefix, valueFn = (v) => v) => {
+    const result = {};
+    for (const attr of el.attributes) {
+        if (attr.name.startsWith(prefix)) {
+            result[attr.name.slice(prefix.length)] = valueFn(attr.value);
         }
     }
+    return result;
+};
 
-    // Define custom element class
+const parsers = {
+    string: (v) => v,
+    int: (v) => parseInt(v, 10),
+    float: (v) => parseFloat(v),
+    boolean: (v) => v === 'true' || v === '' || v === true,
+    json: (v) => JSON.parse(v),
+};
+
+function parseCodec(codecStr) {
+    let type = 'string', defaultStr = null;
+    for (const part of codecStr.split('|')) {
+        if (part in parsers) type = part;
+        else if (part.startsWith('=')) defaultStr = part.slice(1);
+    }
+    const parse = parsers[type];
+    return { type, parse, default: defaultStr !== null ? parse(defaultStr) : null };
+}
+
+export function initStarElements() {
+    for (const template of document.querySelectorAll('template')) {
+        const starAttr = Array.from(template.attributes).find(a => a.name.startsWith('data-star:'));
+        if (starAttr) registerStarElement(starAttr.name.replace('data-star:', ''), template);
+    }
+}
+
+function registerStarElement(name, template) {
+    const signals = extractPrefixedAttrs(template, 'data-signal:', parseCodec);
+    const imports = extractPrefixedAttrs(template, 'data-import:');
+
+    const useShadow = template.hasAttribute('data-shadow-open') || template.hasAttribute('data-shadow-closed');
+    const shadowMode = template.hasAttribute('data-shadow-closed') ? 'closed' : 'open';
+
+    const setupCode = template.content.querySelector('script:not([data-static])')?.textContent ?? '';
+
+    const staticScript = template.content.querySelector('script[data-static]');
+    if (staticScript) {
+        try { new Function(staticScript.textContent)(); }
+        catch (e) { console.error(`[starelements] Static script error in ${name}:`, e); }
+    }
+
     class StarElement extends HTMLElement {
-        static observedAttributes = Object.keys(props);
+        static observedAttributes = Object.keys(signals);
 
         constructor() {
             super();
-            this._id = `id${instanceCounter++}`;
-            this._namespace = `_star.${name.replace(/-/g, '_')}.${this._id}`;
+            const serverId = this.getAttribute('data-star-id');
+            this._namespace = serverId || `_star_${name.replace(/-/g, '_')}_id${instanceCounter++}`;
+            this._hydrating = !!serverId;
             this._cleanups = [];
             this._imports = {};
+            this._connected = false;
+        }
+
+        _namespaceSignalRefs(text) {
+            return text.replace(/\$([a-z_][a-z0-9_]*)/gi, (_, sig) => `$${this._namespace}_${sig}`);
         }
 
         async connectedCallback() {
-            // Load imports
             await this._loadImports();
+            this._signalValues = this._buildSignalValues();
 
-            // Clone template content
-            const content = template.content.cloneNode(true);
+            if (!this._hydrating) {
+                const content = template.content.cloneNode(true);
+                for (const s of content.querySelectorAll('script')) s.remove();
+                this._rewriteSignals(content);
+                this._prepopulateText(content);
 
-            // Remove script elements from content
-            content.querySelectorAll('script').forEach(s => s.remove());
-
-            // Rewrite $signals to namespaced paths
-            this._rewriteSignals(content);
-
-            // Initialize signals in Datastar store
-            this._initSignals();
-
-            // Attach content
-            if (useShadow) {
-                const shadow = this.attachShadow({ mode: shadowMode });
-                shadow.appendChild(content);
-            } else {
-                this.appendChild(content);
+                if (useShadow) {
+                    this.attachShadow({ mode: shadowMode }).appendChild(content);
+                } else {
+                    this.appendChild(content);
+                }
             }
 
-            // Run setup script
+            this._initSignals();
             this._runSetup(setupCode);
-
-            // Trigger Datastar to process new elements
             this._triggerDatastarScan();
+            this._connected = true;
+            this.style.visibility = '';  // Clear inline style, CSS takes over
+            this.setAttribute('data-star-ready', '');
         }
 
         disconnectedCallback() {
-            // Run cleanup functions
-            this._cleanups.forEach(fn => {
+            for (const fn of this._cleanups) {
                 try { fn(); } catch (e) { console.error(e); }
-            });
+            }
             this._cleanups = [];
-
-            // Remove signals from store
             this._removeSignals();
         }
 
         attributeChangedCallback(attrName, oldVal, newVal) {
-            if (oldVal === newVal) return;
-
-            // Update corresponding signal
-            const camelName = attrName.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-
-            // Parse value according to prop type
-            const propDef = props[attrName];
-            const parsedValue = propDef ? propDef.parse(newVal) : newVal;
-
-            // Set signal value (Datastar integration point)
-            this._setSignal(camelName, parsedValue);
+            if (oldVal === newVal || !this._connected) return;
+            const signalDef = signals[attrName];
+            const fullName = `${this._namespace}_${toCamelCase(attrName)}`;
+            window.__datastar_mergePatch?.({ [fullName]: signalDef ? signalDef.parse(newVal) : newVal });
         }
 
         async _loadImports() {
@@ -145,110 +122,72 @@ function registerStarElement(name, template) {
                     try {
                         const module = await import(url);
                         window[alias] = module.default || module;
-                        this._imports[alias] = window[alias];
                     } catch (e) {
                         console.error(`[starelements] Failed to load ${alias} from ${url}:`, e);
                     }
-                } else {
-                    this._imports[alias] = window[alias];
                 }
+                this._imports[alias] = window[alias];
             }
         }
 
         _rewriteSignals(node) {
-            const namespace = this._namespace;
-
             const walk = (el) => {
                 if (el.attributes) {
-                    Array.from(el.attributes).forEach(attr => {
+                    for (const attr of el.attributes) {
                         if (attr.value.includes('$')) {
-                            // Rewrite $foo to $._star.component.id.foo
-                            // But preserve $$global (double dollar for globals)
-                            attr.value = attr.value.replace(
-                                /\$([a-z_][a-z0-9_]*)/gi,
-                                (match, name) => `$${namespace}.${name}`
-                            );
+                            attr.value = this._namespaceSignalRefs(attr.value);
                         }
-                    });
+                    }
                 }
-                if (el.childNodes) {
-                    el.childNodes.forEach(walk);
-                }
+                el.childNodes?.forEach(walk);
             };
-
             walk(node);
         }
 
-        _initSignals() {
-            // Initialize prop signals from attributes
-            Object.keys(props).forEach(propName => {
-                const camelName = propName.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-                const attrValue = this.getAttribute(propName);
-                const propDef = props[propName];
-                const value = attrValue !== null ?
-                    propDef.parse(attrValue) :
-                    propDef.default;
-                this._setSignal(camelName, value);
-            });
+        _buildSignalValues() {
+            const values = {};
+            for (const [name, def] of Object.entries(signals)) {
+                const attr = this.getAttribute(name);
+                values[toCamelCase(name)] = attr !== null ? def.parse(attr) : def.default;
+            }
+            return values;
         }
 
-        _setSignal(name, value) {
-            // Create nested signal path in Datastar store
-            // This creates $._star.component_name.id0.signalName
-            const path = `${this._namespace}.${name}`;
+        _prepopulateText(node) {
+            const prefix = this._namespace + '_';
+            for (const el of node.querySelectorAll('[data-text]')) {
+                const match = el.getAttribute('data-text').match(/\$([a-z_][a-z0-9_]*)/i);
+                if (match?.[1]?.startsWith(prefix)) {
+                    const signalName = match[1].slice(prefix.length);
+                    if (signalName in this._signalValues) {
+                        el.textContent = String(this._signalValues[signalName]);
+                    }
+                }
+            }
+        }
 
-            // Use Datastar's signal initialization if available
-            // Otherwise, fall back to creating a data-signals element
-            const signalEl = document.createElement('div');
-            signalEl.setAttribute('data-signals', JSON.stringify({
-                [path.replace(/\./g, '_')]: value
-            }));
-            signalEl.style.display = 'none';
-            document.body.appendChild(signalEl);
-
-            // Remove after Datastar processes it
-            setTimeout(() => signalEl.remove(), 0);
+        _initSignals() {
+            const signalData = Object.fromEntries(
+                Object.entries(this._signalValues).map(([k, v]) => [`${this._namespace}_${k}`, v])
+            );
+            this.setAttribute('data-signals', JSON.stringify(signalData));
         }
 
         _removeSignals() {
-            // Set namespace to null to remove signals
-            const signalEl = document.createElement('div');
-            signalEl.setAttribute('data-signals', JSON.stringify({
-                [this._namespace.replace(/\./g, '_')]: null
-            }));
-            signalEl.style.display = 'none';
-            document.body.appendChild(signalEl);
-            setTimeout(() => signalEl.remove(), 0);
+            const el = document.createElement('div');
+            el.setAttribute('data-signals', JSON.stringify({ [this._namespace]: null }));
+            el.style.display = 'none';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 0);
         }
 
         _runSetup(code) {
             if (!code.trim()) return;
-
-            const namespace = this._namespace;
-            const el = this;
-            const importRefs = this._imports;
-
-            // Create helpers available in setup scope
-            const onCleanup = (fn) => this._cleanups.push(fn);
-
-            // Rewrite $signals in setup code
-            const rewrittenCode = code.replace(
-                /\$([a-z_][a-z0-9_]*)/gi,
-                (match, name) => `$${namespace}.${name}`
-            );
-
-            // Create actions object for component methods
             const actions = {};
-
             try {
-                // Execute setup in sandboxed scope
-                const setupFn = new Function(
-                    'el', 'onCleanup', 'actions', ...Object.keys(importRefs),
-                    rewrittenCode
+                new Function('el', 'onCleanup', 'actions', ...Object.keys(this._imports), this._namespaceSignalRefs(code))(
+                    this, (fn) => this._cleanups.push(fn), actions, ...Object.values(this._imports)
                 );
-                setupFn(el, onCleanup, actions, ...Object.values(importRefs));
-
-                // Attach actions to element for @action() calls
                 this._actions = actions;
             } catch (e) {
                 console.error(`[starelements] Setup error in ${name}:`, e);
@@ -256,92 +195,17 @@ function registerStarElement(name, template) {
         }
 
         _triggerDatastarScan() {
-            // Dispatch event that Datastar listens for to rescan DOM
-            // This ensures new data-* attributes are processed
-            const event = new CustomEvent('datastar:scan', {
-                bubbles: true,
-                detail: { root: this }
-            });
-            this.dispatchEvent(event);
+            this.dispatchEvent(new CustomEvent('datastar:scan', { bubbles: true, detail: { root: this } }));
         }
 
-        // Helper to emit events
         emit(eventName, detail) {
-            this.dispatchEvent(new CustomEvent(eventName, {
-                detail,
-                bubbles: true,
-                cancelable: true,
-                composed: false
-            }));
+            this.dispatchEvent(new CustomEvent(eventName, { detail, bubbles: true, cancelable: true, composed: false }));
         }
     }
 
-    // Register the custom element
     customElements.define(name, StarElement);
 }
 
-/**
- * Parse a Datastar codec string into a prop definition.
- */
-function parseCodec(codecStr) {
-    const parts = codecStr.split('|');
-    const def = {
-        type: 'string',
-        default: null,
-        required: false,
-        min: null,
-        max: null,
-        parse: (v) => v
-    };
-
-    parts.forEach(part => {
-        if (['string', 'int', 'float', 'boolean', 'json'].includes(part)) {
-            def.type = part;
-        } else if (part.startsWith('min:')) {
-            def.min = parseFloat(part.slice(4));
-        } else if (part.startsWith('max:')) {
-            def.max = parseFloat(part.slice(4));
-        } else if (part === 'required!') {
-            def.required = true;
-        } else if (part.startsWith('=')) {
-            def.default = part.slice(1);
-        }
-    });
-
-    // Create parser based on type
-    switch (def.type) {
-        case 'int':
-            def.parse = (v) => {
-                const n = parseInt(v, 10);
-                if (def.min !== null) return Math.max(def.min, n);
-                if (def.max !== null) return Math.min(def.max, n);
-                return n;
-            };
-            if (def.default) def.default = parseInt(def.default, 10);
-            break;
-        case 'float':
-            def.parse = (v) => {
-                const n = parseFloat(v);
-                if (def.min !== null) return Math.max(def.min, n);
-                if (def.max !== null) return Math.min(def.max, n);
-                return n;
-            };
-            if (def.default) def.default = parseFloat(def.default);
-            break;
-        case 'boolean':
-            def.parse = (v) => v === 'true' || v === '' || v === true;
-            if (def.default) def.default = def.default === 'true';
-            break;
-        case 'json':
-            def.parse = (v) => JSON.parse(v);
-            if (def.default) def.default = JSON.parse(def.default);
-            break;
-    }
-
-    return def;
-}
-
-// Auto-initialize on DOMContentLoaded
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initStarElements);
 } else {

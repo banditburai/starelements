@@ -1,63 +1,35 @@
 """Example: Simple counter component using starelements."""
 
-from starelements import element, prop, signal
+from starhtml import star_app, Div, Button, Span, Signal
+from starelements import element, starelements_hdrs, register_with_app
 
 
 @element("my-counter")
 class Counter:
-    """
-    A simple counter component demonstrating starelements basics.
-
-    Props:
-        initial: Starting count value
-        step: Amount to increment/decrement by
-
-    Events:
-        change: Fired when count changes with new value
-    """
-
-    # Props - observed attributes
-    initial: int = prop(default=0)
-    step: int = prop(default=1, ge=1)
-
-    # Internal signals
-    count: int = signal(0)
-
-    # Events
-    class Events:
-        change: int
+    """A simple counter component demonstrating starelements basics."""
 
     def render(self):
         """Render the counter UI."""
-        return """
-        <div class="counter">
-            <button data-on:click="$count -= $step">-</button>
-            <span data-text="$count" class="count-display"></span>
-            <button data-on:click="$count += $step">+</button>
-        </div>
-        """
-
-    def setup(self) -> str:
-        """Initialize count from initial prop."""
-        return '''
-            // Initialize count from initial prop
-            $count = parseInt(el.getAttribute('initial') || '0', 10);
-
-            // Watch for count changes and emit event
-            effect(() => {
-                el.emit('change', $count);
-            });
-        '''
+        count = Signal("count", 0)
+        step = Signal("step", 1)
+        return Div(
+            count, step,
+            Button("-", data_on_click=count.set(count - step)),
+            Span(data_text=count, style="padding:0 1rem;font-size:1.5rem;"),
+            Button("+", data_on_click=count.set(count + step)),
+            style="display:flex;align-items:center;gap:0.5rem;",
+        )
 
 
 if __name__ == "__main__":
-    from starelements import get_component_assets
+    from fastcore.xml import to_xml
+    from starelements.generator import generate_template_ft
 
     # Show generated template
-    assets = get_component_assets(Counter)
+    ft = generate_template_ft(Counter._element_def, Counter)
     print("=== Template ===")
-    print(assets["template"])
+    print(to_xml(ft))
 
     # Show usage
     print("\n=== Usage Example ===")
-    print(Counter(initial=5, step=2, on_change="console.log('Count:', evt.detail)"))
+    print(Counter(count=5, step=2))
