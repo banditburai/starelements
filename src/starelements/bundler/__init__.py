@@ -21,6 +21,7 @@ from .lock import (
     write_lock_file,
 )
 from .config import BundleConfig, load_config
+from .minify import minify_js
 
 __all__ = [
     # Binary management
@@ -44,4 +45,6 @@ __all__ = [
     # Config
     "BundleConfig",
     "load_config",
+    # Minification
+    "minify_js",
 ]

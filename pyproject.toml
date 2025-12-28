@@ -21,7 +21,6 @@ starelements = "starelements.cli:main"
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
-    "rjsmin>=1.2.5",
 ]
 
 [tool.uv.sources]
@@ -32,9 +31,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-    "rjsmin>=1.2.5",
-]
+dev = []
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/starelements"]
