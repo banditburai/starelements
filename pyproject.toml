@@ -8,12 +8,17 @@ license = "MIT"
 authors = [
     { name = "Your Name", email = "you@example.com" }
 ]
-dependencies = ["starhtml"]
+dependencies = [
+    "starhtml",
+    "httpx>=0.27",
+    "platformdirs>=4.0",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=4.0",
+    "rjsmin>=1.2.5",
 ]
 
 [tool.uv.sources]
@@ -22,6 +27,11 @@ starhtml = { path = "../starhtml-upstream", editable = true }
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "rjsmin>=1.2.5",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/starelements"]
