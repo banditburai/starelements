@@ -3,6 +3,8 @@
  *
  * Supports client-side rendering (clones template) and hydration (adopts server content).
  * Hydration detected via data-star-id attribute.
+ *
+ * Import maps for peer dependencies are generated server-side by starelements_hdrs().
  */
 
 let instanceCounter = 0;
@@ -47,6 +49,7 @@ export function initStarElements() {
 function registerStarElement(name, template) {
     const signals = extractPrefixedAttrs(template, 'data-signal:', parseCodec);
     const imports = extractPrefixedAttrs(template, 'data-import:');
+    const scripts = extractPrefixedAttrs(template, 'data-script:');  // UMD scripts
 
     const useShadow = template.hasAttribute('data-shadow-open') || template.hasAttribute('data-shadow-closed');
     const shadowMode = template.hasAttribute('data-shadow-closed') ? 'closed' : 'open';
@@ -117,6 +120,7 @@ function registerStarElement(name, template) {
         }
 
         async _loadImports() {
+            // Load ESM imports via dynamic import()
             for (const [alias, url] of Object.entries(imports)) {
                 if (!window[alias]) {
                     try {
@@ -128,15 +132,52 @@ function registerStarElement(name, template) {
                 }
                 this._imports[alias] = window[alias];
             }
+
+            // Load UMD scripts via script tag injection (for libraries with bundled deps)
+            // Note: HTML attrs are lowercased, but UMD globals are often PascalCase
+            const findGlobal = (name) => {
+                const pascal = name.charAt(0).toUpperCase() + name.slice(1);
+                return window[name] || window[pascal] || window[name.toUpperCase()];
+            };
+            for (const [alias, url] of Object.entries(scripts)) {
+                if (!findGlobal(alias)) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = url;
+                        script.onload = () => resolve();
+                        script.onerror = () => reject(new Error(`Failed to load ${alias} from ${url}`));
+                        document.head.appendChild(script);
+                    }).catch(e => console.error(`[starelements] ${e.message}`));
+                }
+                this._imports[alias] = findGlobal(alias);
+            }
         }
 
         _rewriteSignals(node) {
             const walk = (el) => {
                 if (el.attributes) {
+                    const renames = [];
                     for (const attr of el.attributes) {
-                        if (attr.value.includes('$')) {
+                        // Namespace data-ref values so $refName signals match
+                        if (attr.name === 'data-ref' && attr.value) {
+                            attr.value = `${this._namespace}_${attr.value}`;
+                        }
+                        // Namespace data-computed attribute names and values
+                        else if (attr.name.startsWith('data-computed:')) {
+                            const signalName = attr.name.slice('data-computed:'.length);
+                            const newName = `data-computed:${this._namespace}_${signalName}`;
+                            const newValue = this._namespaceSignalRefs(attr.value);
+                            renames.push([attr.name, newName, newValue]);
+                        }
+                        // Namespace $signal references in expressions
+                        else if (attr.value.includes('$')) {
                             attr.value = this._namespaceSignalRefs(attr.value);
                         }
+                    }
+                    // Apply renames after iteration (can't modify during)
+                    for (const [oldName, newName, newValue] of renames) {
+                        el.removeAttribute(oldName);
+                        el.setAttribute(newName, newValue);
                     }
                 }
                 el.childNodes?.forEach(walk);
@@ -184,9 +225,11 @@ function registerStarElement(name, template) {
         _runSetup(code) {
             if (!code.trim()) return;
             const actions = {};
+            // Helper to get elements by ref name (accounts for namespacing)
+            const refs = (refName) => this.querySelector(`[data-ref="${this._namespace}_${refName}"]`);
             try {
-                new Function('el', 'onCleanup', 'actions', ...Object.keys(this._imports), this._namespaceSignalRefs(code))(
-                    this, (fn) => this._cleanups.push(fn), actions, ...Object.values(this._imports)
+                new Function('el', 'onCleanup', 'actions', 'refs', ...Object.keys(this._imports), this._namespaceSignalRefs(code))(
+                    this, (fn) => this._cleanups.push(fn), actions, refs, ...Object.values(this._imports)
                 );
                 this._actions = actions;
             } catch (e) {

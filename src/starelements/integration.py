@@ -51,10 +51,15 @@ _SKELETON_CSS = (
 )
 
 
-def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/starelements") -> tuple:
+def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/starelements", debug: bool = False) -> tuple:
     """Generate header elements for starelements components.
 
     Single pass through components to collect all header data.
+
+    Args:
+        *component_classes: Component classes decorated with @element
+        base_url: Base URL for serving static files (default: "/_pkg/starelements")
+        debug: Enable debug mode with cache busting (default: False)
 
     Returns:
         Tuple of (Style, Script, Templates...) for inclusion in page headers.
@@ -81,9 +86,13 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
     if has_skeleton:
         css_rules.insert(0, _SKELETON_CSS)
 
+    # Add cache busting in debug mode
+    import time
+    cache_bust = f"?v={int(time.time())}" if debug else ""
+
     return (
         Style("".join(css_rules)),
-        Script(type="module", src=f"{base_url}/starelements.min.js"),
+        Script(type="module", src=f"{base_url}/starelements.min.js{cache_bust}"),
         *templates,
     )
 

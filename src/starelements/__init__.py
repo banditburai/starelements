@@ -44,6 +44,6 @@ __all__ = [
     "get_runtime_path",
     "get_static_path",
     "register",
-    "starelements_hdrs",
+    "starelements_hdrs",  # Returns (hdrs, early_hdrs) tuple
 ]
 __version__ = "0.1.0"
