@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from .binary import ensure_esbuild
-from .fetcher import download_package, resolve_version
+from .fetcher import download_package_recursive, resolve_version
 
 # Timeout for esbuild subprocess (seconds)
 BUNDLE_TIMEOUT = 120
@@ -37,13 +37,18 @@ def bundle_package(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        entry = download_package(package, exact_version, tmp_path, entry_point)
+        # Create node_modules-like structure for esbuild resolution
+        node_modules = tmp_path / "node_modules"
+        node_modules.mkdir()
+        
+        entry = download_package_recursive(package, exact_version, node_modules)
 
         cmd = [
             str(esbuild),
             str(entry),
             "--bundle",
             "--format=esm",
+            f"--node-paths={node_modules}",
             f"--outfile={output_path}",
         ]
         if minify:

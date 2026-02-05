@@ -93,6 +93,7 @@ def element(
         _validate_class_name(cls)
 
         imports: dict[str, str] = {}
+        import_map: dict[str, str] = {}
         scripts: dict[str, str] = {}
         events: list[str] = []
         render_fn = None
@@ -103,6 +104,8 @@ def element(
                 continue
             if attr_name == "imports" and isinstance(value, dict):
                 imports = value
+            elif attr_name == "import_map" and isinstance(value, dict):
+                import_map = value
             elif attr_name == "scripts" and isinstance(value, dict):
                 scripts = value
             elif attr_name == "Events" and inspect.isclass(value):
@@ -129,6 +132,7 @@ def element(
         elem_def = ElementDef(
             tag_name=name,
             imports=imports,
+            import_map=import_map,
             scripts=scripts,
             events=events,
             render_fn=render_fn,

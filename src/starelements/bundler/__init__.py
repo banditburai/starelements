@@ -10,7 +10,7 @@ from .fetcher import (
     fetch_package_json,
     resolve_version,
     get_entry_point,
-    download_package,
+    download_package_recursive,
 )
 from .bundle import bundle_package
 from .lock import (
@@ -33,7 +33,7 @@ __all__ = [
     "fetch_package_json",
     "resolve_version",
     "get_entry_point",
-    "download_package",
+    "download_package_recursive",
     # Bundling
     "bundle_package",
     # Lock file

@@ -44,51 +44,64 @@ def _clean_ft_internals(node: Any):
             _clean_ft_internals(child)
 
 
-def _extract_signals_from_ft(ft: Any) -> tuple[Any, dict[str, Any]]:
-    """Extract signals from FT tree, returning cleaned tree and signal definitions."""
+def _extract_signals_from_ft(ft: Any, component_signals: list | None = None) -> tuple[Any, dict[str, Any]]:
+    """Extract signals from FT tree, returning cleaned tree and signal definitions.
+
+    Args:
+        ft: The FT tree to extract signals from
+        component_signals: Optional list of ComponentSignals collected during render
+    """
     try:
         from starhtml.datastar import Signal, Expr
     except ImportError:
         from starhtml import Signal, Expr
 
     signals: dict[str, Any] = {}
+    seen_ids = set()
 
-    def walk(node: Any) -> Any:
-        if isinstance(node, Signal):
-            # Skip computed signals - StarHTML adds data-computed:* attrs automatically
-            if isinstance(node._initial, Expr):
-                return None
-            signals[node._name] = {"initial": node._initial, "type": node.type_}
-            return None
+    # First, add ComponentSignals that were collected during render
+    # These have _ref_only=True so they don't appear in __signals_found
+    if component_signals:
+        for sig in component_signals:
+            if sig._id not in seen_ids:
+                signals[sig._name] = {"initial": sig._initial, "type": sig.type_}
+                seen_ids.add(sig._id)
 
-        if hasattr(node, "tag") and hasattr(node, "children"):
-            if data_signals := (node.attrs or {}).get("data-signals"):
-                for m in _SIGNAL_PATTERN.finditer(str(data_signals)):
-                    val, typ = _parse_js_value(m.group(2))
-                    signals[m.group(1)] = {"initial": val, "type": typ}
-                del node.attrs["data-signals"]
+    def collect_from_node(node: Any):
+        if hasattr(node, "__signals_found"):
+            for sig in node.__signals_found:
+                if isinstance(sig, Signal) and sig._id not in seen_ids:
+                    # Skip computed signals - StarHTML adds data-computed:* attrs automatically
+                    if isinstance(sig._initial, Expr):
+                        continue
+                    signals[sig._name] = {"initial": sig._initial, "type": sig.type_}
+                    seen_ids.add(sig._id)
+            # Remove to allow deepcopy if needed and keep template clean
+            delattr(node, "__signals_found")
 
-            node.children = [c for child in node.children if (c := walk(child)) is not None]
-            _clean_ft_internals(node)
-            return node
+        if hasattr(node, "children"):
+            for child in node.children:
+                collect_from_node(child)
 
-        if isinstance(node, (list, tuple)):
-            return [c for item in node if (c := walk(item)) is not None]
-
-        return node
-
-    return walk(ft), signals
+    collect_from_node(ft)
+    return ft, signals
 
 
 def generate_template_ft(elem_def: ElementDef, cls: Type):
     """Generate FT Template element for a web component."""
     from starhtml import Template, Script
 
+    from .signals import collect_component_signals
+
     children = []
     signals = {}
 
     if elem_def.render_fn:
-        cleaned_ft, signals = _extract_signals_from_ft(elem_def.render_fn(cls()))
+        # Use context manager to capture ComponentSignals created during render
+        # These have _ref_only=True so they're filtered out of __signals_found
+        with collect_component_signals() as component_signals:
+            ft = elem_def.render_fn(cls())
+        cleaned_ft, signals = _extract_signals_from_ft(ft, component_signals)
         if cleaned_ft is not None:
             children.append(cleaned_ft)
 

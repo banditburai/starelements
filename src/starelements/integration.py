@@ -65,9 +65,11 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
         Tuple of (Style, Script, Templates...) for inclusion in page headers.
     """
     from starhtml import Script, Style
+    import json
 
     css_rules = []
     templates = []
+    import_map = {}
     has_skeleton = False
 
     # Single pass through all components
@@ -79,22 +81,26 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
 
         if elem_def.skeleton:
             has_skeleton = True
+        if elem_def.import_map:
+            import_map.update(elem_def.import_map)
         css_rules.extend(_generate_component_css(elem_def))
         templates.append(generate_template_ft(elem_def, cls))
 
     # Build hdrs
-    if has_skeleton:
-        css_rules.insert(0, _SKELETON_CSS)
+    hdrs = []
+    if css_rules:
+        if has_skeleton:
+            css_rules.insert(0, _SKELETON_CSS)
+        hdrs.append(Style("".join(css_rules)))
 
     # Add cache busting in debug mode
     import time
     cache_bust = f"?v={int(time.time())}" if debug else ""
 
-    return (
-        Style("".join(css_rules)),
-        Script(type="module", src=f"{base_url}/starelements.min.js{cache_bust}"),
-        *templates,
-    )
+    hdrs.append(Script(type="module", src=f"{base_url}/starelements.min.js{cache_bust}"))
+    hdrs.extend(templates)
+
+    return tuple(hdrs)
 
 
 def register(app, *component_classes: Type, prefix: str = "/_pkg/starelements"):

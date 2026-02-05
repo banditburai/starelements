@@ -4,8 +4,14 @@
  * Supports client-side rendering (clones template) and hydration (adopts server content).
  * Hydration detected via data-star-id attribute.
  *
- * Import maps for peer dependencies are generated server-side by starelements_hdrs().
+ * Signal scoping (Rocket-style):
+ *   $$signal - Component-local (namespaced per instance)
+ *   $signal  - Global (page-level, passed through unchanged)
  */
+
+// Direct import - no import map required for basic starelements usage
+import * as datastar from '/static/datastar.js';
+const { effect } = datastar;
 
 let instanceCounter = 0;
 
@@ -75,8 +81,14 @@ function registerStarElement(name, template) {
             this._connected = false;
         }
 
+        /**
+         * Rewrite $$signal (component-local) to $namespace_signal.
+         * Leave $signal (global) unchanged.
+         */
         _namespaceSignalRefs(text) {
-            return text.replace(/\$([a-z_][a-z0-9_]*)/gi, (_, sig) => `$${this._namespace}_${sig}`);
+            // Only namespace $$signals (component-local)
+            // $signals pass through unchanged (global)
+            return text.replace(/\$\$([a-z_][a-z0-9_]*)/gi, (_, sig) => `$${this._namespace}_${sig}`);
         }
 
         async connectedCallback() {
@@ -97,8 +109,8 @@ function registerStarElement(name, template) {
             }
 
             this._initSignals();
-            this._runSetup(setupCode);
             this._triggerDatastarScan();
+            this._runSetup(setupCode);
             this._connected = true;
             this.style.visibility = '';  // Clear inline style, CSS takes over
             this.setAttribute('data-star-ready', '');
@@ -116,7 +128,7 @@ function registerStarElement(name, template) {
             if (oldVal === newVal || !this._connected) return;
             const signalDef = signals[attrName];
             const fullName = `${this._namespace}_${toCamelCase(attrName)}`;
-            window.__datastar_mergePatch?.({ [fullName]: signalDef ? signalDef.parse(newVal) : newVal });
+            datastar.mergePatch({ [fullName]: signalDef ? signalDef.parse(newVal) : newVal });
         }
 
         async _loadImports() {
@@ -125,7 +137,7 @@ function registerStarElement(name, template) {
                 if (!window[alias]) {
                     try {
                         const module = await import(url);
-                        window[alias] = module.default || module;
+                        window[alias] = module;
                     } catch (e) {
                         console.error(`[starelements] Failed to load ${alias} from ${url}:`, e);
                     }
@@ -153,12 +165,16 @@ function registerStarElement(name, template) {
             }
         }
 
+        /**
+         * Rewrite $$signals in DOM attributes to namespaced form.
+         * Leave $signals unchanged (they're global).
+         */
         _rewriteSignals(node) {
             const walk = (el) => {
                 if (el.attributes) {
                     const renames = [];
                     for (const attr of el.attributes) {
-                        // Namespace data-ref values so $refName signals match
+                        // Namespace data-ref values so $$refName signals match
                         if (attr.name === 'data-ref' && attr.value) {
                             attr.value = `${this._namespace}_${attr.value}`;
                         }
@@ -169,8 +185,8 @@ function registerStarElement(name, template) {
                             const newValue = this._namespaceSignalRefs(attr.value);
                             renames.push([attr.name, newName, newValue]);
                         }
-                        // Namespace $signal references in expressions
-                        else if (attr.value.includes('$')) {
+                        // Only namespace $$signal references, leave $signal alone
+                        else if (attr.value.includes('$$')) {
                             attr.value = this._namespaceSignalRefs(attr.value);
                         }
                     }
@@ -211,6 +227,10 @@ function registerStarElement(name, template) {
             const signalData = Object.fromEntries(
                 Object.entries(this._signalValues).map(([k, v]) => [`${this._namespace}_${k}`, v])
             );
+            // Use mergePatch to directly create signals in store (sync)
+            // This ensures signals exist before setup code runs
+            datastar.mergePatch(signalData);
+            // Also set attribute for Datastar's DOM processing
             this.setAttribute('data-signals', JSON.stringify(signalData));
         }
 
@@ -222,14 +242,59 @@ function registerStarElement(name, template) {
             setTimeout(() => el.remove(), 0);
         }
 
+        /**
+         * Run setup code with signal proxy for $$/$signal access.
+         *
+         * $$signal - Component-local (namespaced via proxy)
+         * $signal  - Global (passed through to Datastar store)
+         */
         _runSetup(code) {
             if (!code.trim()) return;
             const actions = {};
             // Helper to get elements by ref name (accounts for namespacing)
             const refs = (refName) => this.querySelector(`[data-ref="${this._namespace}_${refName}"]`);
+
+            // Signal Proxy for setup code scope
+            // $$signal -> namespaced component-local signal
+            // $signal  -> global signal (unchanged)
+            //
+            // Uses getPath() which is Datastar's standard API for signal access.
+            // Signals must be created via mergePatch() in _initSignals() BEFORE
+            // setup runs, otherwise getPath() returns undefined and effects
+            // won't track the dependency.
+            const namespace = this._namespace;
+            const sp = new Proxy({}, {
+                has: (target, prop) => {
+                    // Only claim $$signals (component-local)
+                    if (typeof prop === 'string' && prop.startsWith('$$')) return true;
+                    return Reflect.has(target, prop);
+                },
+                get: (target, prop) => {
+                    if (typeof prop === 'string' && prop.startsWith('$$')) {
+                        // $$name -> namespace_name in store
+                        const storeKey = `${namespace}_${prop.slice(2)}`;
+                        return datastar.getPath(storeKey);
+                    }
+                    // $signal passes through - Datastar handles global access
+                    return Reflect.get(target, prop);
+                },
+                set: (target, prop, value) => {
+                    if (typeof prop === 'string' && prop.startsWith('$$')) {
+                        const storeKey = `${namespace}_${prop.slice(2)}`;
+                        datastar.mergePatch({ [storeKey]: value });
+                        return true;
+                    }
+                    return Reflect.set(target, prop, value);
+                }
+            });
+
             try {
-                new Function('el', 'onCleanup', 'actions', 'refs', ...Object.keys(this._imports), this._namespaceSignalRefs(code))(
-                    this, (fn) => this._cleanups.push(fn), actions, refs, ...Object.values(this._imports)
+                // Wrap code in "with(sp)" to intercept $$signals
+                // $signals fall through to global scope
+                const wrappedCode = `with(sp) { ${code} }`;
+
+                new Function('el', 'onCleanup', 'actions', 'refs', 'effect', 'sp', 'datastar', ...Object.keys(this._imports), wrappedCode)(
+                    this, (fn) => this._cleanups.push(fn), actions, refs, effect, sp, datastar, ...Object.values(this._imports)
                 );
                 this._actions = actions;
             } catch (e) {

@@ -1,13 +1,13 @@
 """starelements - Python-native web components for StarHTML/Datastar.
 
 Example:
-    from starhtml import star_app, Div, Button, Span, Signal
-    from starelements import element, register
+    from starhtml import Div, Button, Span
+    from starelements import element, ComponentSignal
 
     @element("my-counter")
     class MyCounter:
         def render(self):
-            count = Signal("count", 0)
+            count = ComponentSignal("count", 0)  # -> $$count in JS
             return Div(
                 count,
                 Button("-", data_on_click=count.set(count - 1)),
@@ -15,8 +15,16 @@ Example:
                 Button("+", data_on_click=count.set(count + 1)),
             )
 
+        def setup(self):
+            return '''
+                effect(() => {
+                    console.log('Local:', $$count);   // Component-local
+                    console.log('Global:', $theme);   // Page-level
+                });
+            '''
+
     app, rt = star_app()
-    register(app)  # Register all @element components
+    app.register(MyCounter)
 
     @rt("/")
     def home():
@@ -33,8 +41,10 @@ from .integration import (
     register,
     starelements_hdrs,
 )
+from .signals import ComponentSignal
 
 __all__ = [
+    "ComponentSignal",
     "ElementDef",
     "element",
     "ElementInstance",
@@ -44,6 +54,6 @@ __all__ = [
     "get_runtime_path",
     "get_static_path",
     "register",
-    "starelements_hdrs",  # Returns (hdrs, early_hdrs) tuple
+    "starelements_hdrs",
 ]
 __version__ = "0.1.0"

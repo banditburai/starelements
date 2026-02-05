@@ -12,6 +12,7 @@ class ElementDef:
 
     tag_name: str
     imports: dict[str, str] = field(default_factory=dict)  # ESM dynamic imports
+    import_map: dict[str, str] = field(default_factory=dict)  # Browser import map
     scripts: dict[str, str] = field(default_factory=dict)  # UMD scripts loaded as globals
     events: list[str] = field(default_factory=list)
     render_fn: Callable | None = None
