@@ -99,6 +99,8 @@ def element(
         render_fn = None
         setup_fn = None
 
+        static_setup_fn = None
+
         for attr_name, value in vars(cls).items():
             if attr_name.startswith("_"):
                 continue
@@ -114,6 +116,8 @@ def element(
                 render_fn = value
             elif attr_name == "setup" and callable(value):
                 setup_fn = value
+            elif attr_name == "static_setup" and callable(value):
+                static_setup_fn = value
 
         # Build dimensions: explicit dict takes precedence, otherwise use height/width
         if dimensions:
@@ -137,6 +141,7 @@ def element(
             events=events,
             render_fn=render_fn,
             setup_fn=setup_fn,
+            static_setup_fn=static_setup_fn,
             shadow=shadow,
             form_associated=form_associated,
             dimensions=normalized_dims,

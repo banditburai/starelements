@@ -42,6 +42,14 @@ class TestElementDecorator:
 
         assert ImportTest._element_def.imports == {"Peaks": "https://esm.sh/peaks.js"}
 
+    def test_scripts_extracted(self):
+        """scripts dict is extracted (for UMD loading)."""
+        @element("scripts-test")
+        class ScriptsTest:
+            scripts = {"Peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"}
+
+        assert ScriptsTest._element_def.scripts == {"Peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"}
+
     def test_events_class_extracted(self):
         """Events inner class is extracted."""
         @element("event-test")
@@ -103,3 +111,14 @@ class TestElementDecorator:
             pass
 
         assert ExplicitNoSkel._element_def.skeleton is False
+
+    def test_static_setup_method_captured(self):
+        """static_setup() method is captured for one-time initialization."""
+        @element("static-setup-test")
+        class StaticSetupTest:
+            def static_setup(self):
+                return "window.TEST_STATIC = true;"
+
+        assert StaticSetupTest._element_def.static_setup_fn is not None
+        code = StaticSetupTest._element_def.static_setup_fn(StaticSetupTest())
+        assert "TEST_STATIC" in code

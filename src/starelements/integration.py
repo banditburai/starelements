@@ -65,7 +65,6 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
         Tuple of (Style, Script, Templates...) for inclusion in page headers.
     """
     from starhtml import Script, Style
-    import json
 
     css_rules = []
     templates = []
@@ -83,6 +82,11 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
             has_skeleton = True
         if elem_def.import_map:
             import_map.update(elem_def.import_map)
+        # Auto-add URL imports to import_map (simplifies simple cases)
+        # If imports value is a URL, add alias→URL to import_map
+        for alias, specifier in elem_def.imports.items():
+            if specifier.startswith(("http://", "https://", "/")):
+                import_map[alias] = specifier
         css_rules.extend(_generate_component_css(elem_def))
         templates.append(generate_template_ft(elem_def, cls))
 

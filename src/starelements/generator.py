@@ -108,6 +108,9 @@ def generate_template_ft(elem_def: ElementDef, cls: Type):
     if elem_def.setup_fn and (code := elem_def.setup_fn(cls()).strip()):
         children.insert(0, Script(code))
 
+    if elem_def.static_setup_fn and (static_code := elem_def.static_setup_fn(cls()).strip()):
+        children.insert(0, Script(static_code, data_static=True))
+
     attrs = {f"data-star:{elem_def.tag_name}": True}
     attrs.update({f"data-import:{k}": v for k, v in elem_def.imports.items()})
     attrs.update({f"data-script:{k}": v for k, v in elem_def.scripts.items()})

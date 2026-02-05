@@ -11,10 +11,13 @@ class CodeEditor:
     """
     
     # UNPKG Strategy: Manual Dependency Resolution
-    # We use unpkg to serve raw ESM files. Since raw files use bare imports,
-    # we must map EVERY dependency in the import_map. This guarantees single instances.
-    
-    _CM_VER = "6.0.1"
+    # We use unpkg raw ESM files which have bare imports internally (e.g., @lezer/common).
+    # This requires mapping ALL dependencies in import_map for the browser to resolve them.
+    #
+    # For simpler cases with bundled/self-contained ESM modules, you can skip import_map
+    # and use URLs directly in imports:
+    #   imports = {"chart": "https://cdn.jsdelivr.net/npm/chart.js/+esm"}
+
     _STATE_VER = "6.4.1"
     _VIEW_VER = "6.28.1"
     _LANG_VER = "6.10.1"

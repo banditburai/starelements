@@ -17,6 +17,7 @@ class ElementDef:
     events: list[str] = field(default_factory=list)
     render_fn: Callable | None = None
     setup_fn: Callable | None = None
+    static_setup_fn: Callable | None = None  # Runs once when element is registered
     shadow: bool = False
     form_associated: bool = False
     dimensions: dict[str, str] = field(default_factory=dict)
