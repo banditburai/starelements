@@ -1,6 +1,5 @@
 """Tests for package fetching from unpkg."""
 
-import pytest
 from unittest.mock import MagicMock
 
 
@@ -274,3 +273,132 @@ class TestDownloadPackage:
         result = download_package("pkg", "1.0.0", tmp_path, entry_point="dist/esm/module.mjs")
 
         assert result.name == "module.mjs"
+
+
+class TestRecursiveFetcher:
+    def _mock_http(self, monkeypatch, packages):
+        """Set up mocked HTTP for recursive fetching.
+
+        packages: dict mapping package name to {pkg_json, entry_content}
+        """
+        from unittest.mock import MagicMock
+
+        def mock_get_func(url, **kwargs):
+            response = MagicMock()
+            response.raise_for_status = MagicMock()
+            for name, info in packages.items():
+                if f"{name}@" in url and "package.json" in url:
+                    response.json.return_value = info["pkg_json"]
+                    return response
+                if f"{name}@" in url:
+                    response.text = info["entry_content"]
+                    return response
+            response.text = "// unknown"
+            return response
+
+        monkeypatch.setattr("httpx.get", mock_get_func)
+
+        mock_client = MagicMock()
+        mock_client.get = mock_get_func
+        monkeypatch.setattr("httpx.Client", lambda **kw: mock_client)
+
+    def test_recursive_fetch_basic(self, tmp_path, monkeypatch):
+        """RecursiveFetcher downloads package and writes files."""
+        from starelements.bundler.fetcher import download_package_recursive
+
+        self._mock_http(
+            monkeypatch,
+            {
+                "my-lib": {
+                    "pkg_json": {"name": "my-lib", "version": "1.0.0", "module": "./index.js"},
+                    "entry_content": "export default 42;",
+                }
+            },
+        )
+
+        result = download_package_recursive("my-lib", "1.0.0", tmp_path)
+        assert result is not None
+        assert result.exists()
+        assert result.read_text() == "export default 42;"
+        assert (tmp_path / "my-lib" / "package.json").exists()
+
+    def test_recursive_fetch_with_deps(self, tmp_path, monkeypatch):
+        """RecursiveFetcher follows dependencies."""
+        from starelements.bundler.fetcher import download_package_recursive
+
+        self._mock_http(
+            monkeypatch,
+            {
+                "parent-pkg": {
+                    "pkg_json": {
+                        "name": "parent-pkg",
+                        "version": "2.0.0",
+                        "module": "./index.js",
+                        "dependencies": {"child-pkg": "^1.0.0"},
+                    },
+                    "entry_content": "import child from 'child-pkg';",
+                },
+                "child-pkg": {
+                    "pkg_json": {"name": "child-pkg", "version": "1.2.0", "module": "./index.js"},
+                    "entry_content": "export default 'child';",
+                },
+            },
+        )
+
+        result = download_package_recursive("parent-pkg", "2.0.0", tmp_path)
+        assert result is not None
+        # Both packages should be downloaded
+        assert (tmp_path / "parent-pkg" / "index.js").exists()
+        assert (tmp_path / "child-pkg" / "index.js").exists()
+        assert (tmp_path / "child-pkg" / "package.json").exists()
+
+    def test_recursive_fetch_deduplicates(self, tmp_path, monkeypatch):
+        """RecursiveFetcher skips already-fetched packages."""
+        from starelements.bundler.fetcher import RecursiveFetcher
+
+        fetch_count = [0]
+
+        def mock_get_func(url, **kwargs):
+            response = MagicMock()
+            response.raise_for_status = MagicMock()
+            if "package.json" in url:
+                fetch_count[0] += 1
+                response.json.return_value = {
+                    "name": "dedup-pkg",
+                    "version": "1.0.0",
+                    "module": "./index.js",
+                }
+            else:
+                response.text = "export default 1;"
+            return response
+
+        monkeypatch.setattr("httpx.get", mock_get_func)
+        mock_client = MagicMock()
+        mock_client.get = mock_get_func
+        monkeypatch.setattr("httpx.Client", lambda **kw: mock_client)
+
+        fetcher = RecursiveFetcher(tmp_path)
+        fetcher.fetch("dedup-pkg", "1.0.0")
+        result2 = fetcher.fetch("dedup-pkg", "1.0.0")
+
+        assert result2 is None  # Second call returns None (skipped)
+        assert fetch_count[0] == 1  # Only fetched package.json once
+
+    def test_recursive_fetch_scoped_package(self, tmp_path, monkeypatch):
+        """RecursiveFetcher handles @scoped/packages."""
+        from starelements.bundler.fetcher import download_package_recursive
+
+        self._mock_http(
+            monkeypatch,
+            {
+                "@scope/lib": {
+                    "pkg_json": {"name": "@scope/lib", "version": "3.0.0", "module": "./dist/index.js"},
+                    "entry_content": "export const x = 1;",
+                }
+            },
+        )
+
+        result = download_package_recursive("@scope/lib", "3.0.0", tmp_path)
+        assert result is not None
+        # Scoped packages use __ separator
+        assert (tmp_path / "@scope__lib").is_dir()

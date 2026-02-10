@@ -1,7 +1,6 @@
 """Tests for JavaScript minification using esbuild."""
 
 import pytest
-from pathlib import Path
 
 
 class TestMinifyJs:
@@ -85,7 +84,7 @@ function    add(   a,    b   ) {
 
         source = tmp_path / "nonexistent.js"
 
-        with pytest.raises(Exception):  # Could be RuntimeError or FileNotFoundError
+        with pytest.raises((RuntimeError, FileNotFoundError)):
             minify_js(source)
 
     def test_minify_creates_output_dir(self, tmp_path):

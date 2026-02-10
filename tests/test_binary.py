@@ -1,8 +1,8 @@
 """Tests for esbuild binary management."""
 
-import platform
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 class TestPlatformDetection:
@@ -90,7 +90,7 @@ class TestBinaryUrl:
 
     def test_get_binary_url_version(self):
         """get_binary_url includes version."""
-        from starelements.bundler.binary import get_binary_url, ESBUILD_VERSION
+        from starelements.bundler.binary import ESBUILD_VERSION, get_binary_url
 
         url = get_binary_url()
         assert ESBUILD_VERSION in url
@@ -99,7 +99,7 @@ class TestBinaryUrl:
 class TestEsbuildPath:
     def test_get_esbuild_path_in_cache_dir(self):
         """get_esbuild_path returns path in cache directory."""
-        from starelements.bundler.binary import get_esbuild_path, ESBUILD_VERSION
+        from starelements.bundler.binary import ESBUILD_VERSION, get_esbuild_path
 
         path = get_esbuild_path()
         assert "starelements" in str(path)
@@ -107,7 +107,7 @@ class TestEsbuildPath:
 
     def test_get_esbuild_path_windows_has_exe(self):
         """get_esbuild_path adds .exe extension on Windows."""
-        from starelements.bundler.binary import get_esbuild_path, ESBUILD_VERSION
+        from starelements.bundler.binary import get_esbuild_path
 
         with patch("platform.system", return_value="Windows"):
             path = get_esbuild_path()
@@ -115,7 +115,7 @@ class TestEsbuildPath:
 
     def test_get_esbuild_path_unix_no_exe(self):
         """get_esbuild_path has no extension on Unix."""
-        from starelements.bundler.binary import get_esbuild_path, ESBUILD_VERSION
+        from starelements.bundler.binary import get_esbuild_path
 
         with patch("platform.system", return_value="Darwin"):
             path = get_esbuild_path()
@@ -125,7 +125,7 @@ class TestEsbuildPath:
 class TestVerifyEsbuild:
     def test_verify_esbuild_success(self, tmp_path):
         """verify_esbuild returns True for valid binary."""
-        from starelements.bundler.binary import verify_esbuild, ESBUILD_VERSION
+        from starelements.bundler.binary import ESBUILD_VERSION, verify_esbuild
 
         # Create a mock binary that outputs the version
         binary = tmp_path / "esbuild"
@@ -186,8 +186,10 @@ class TestEnsureEsbuild:
         def mock_get(*args, **kwargs):
             class MockResponse:
                 content = mock_binary_content
+
                 def raise_for_status(self):
                     pass
+
             return MockResponse()
 
         monkeypatch.setattr("httpx.get", mock_get)
@@ -235,8 +237,10 @@ class TestEnsureEsbuild:
         def mock_get(*args, **kwargs):
             class MockResponse:
                 content = mock_binary_content
+
                 def raise_for_status(self):
                     pass
+
             return MockResponse()
 
         monkeypatch.setattr("httpx.get", mock_get)
@@ -258,8 +262,10 @@ class TestEnsureEsbuild:
         def mock_get(*args, **kwargs):
             class MockResponse:
                 content = b"invalid binary"
+
                 def raise_for_status(self):
                     pass
+
             return MockResponse()
 
         monkeypatch.setattr("httpx.get", mock_get)

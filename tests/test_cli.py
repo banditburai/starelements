@@ -1,11 +1,10 @@
 """Tests for CLI entry point."""
 
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 
 class TestCmdBundle:
@@ -15,11 +14,10 @@ class TestCmdBundle:
 
         # Create pyproject.toml with config
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         # Mock the bundling functions
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
@@ -52,11 +50,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
@@ -76,15 +73,14 @@ output = "static/js"
         assert "test-pkg" in data["packages"]
 
     def test_cmd_bundle_creates_output_dir(self, tmp_path, monkeypatch):
-        """cmd_bundle creates output directory if needed."""
+        """cmd_bundle creates .starelements/bundles/ directory."""
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "deep/nested/static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
@@ -98,7 +94,7 @@ output = "deep/nested/static/js"
         result = cli.cmd_bundle(tmp_path)
 
         assert result == 0
-        assert (tmp_path / "deep/nested/static/js").exists()
+        assert (tmp_path / ".starelements" / "bundles").exists()
 
 
 class TestMain:
@@ -111,11 +107,10 @@ class TestMain:
 
         # Create minimal config
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test@1"]
-output = "static"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
@@ -159,8 +154,8 @@ output = "static"
         captured = capsys.readouterr()
         assert "Unknown command" in captured.out
 
-    def test_main_clean_not_implemented(self, monkeypatch, capsys):
-        """main() returns error for unimplemented clean command."""
+    def test_main_clean_is_unknown(self, monkeypatch, capsys):
+        """main() treats 'clean' as unknown command."""
         from starelements import cli
 
         monkeypatch.setattr("sys.argv", ["starelements", "clean"])
@@ -170,7 +165,7 @@ output = "static"
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "not implemented" in captured.out
+        assert "Unknown command" in captured.out
 
 
 class TestScopedPackages:
@@ -179,11 +174,10 @@ class TestScopedPackages:
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["@org/pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
 
@@ -212,11 +206,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["@org/pkg"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
 
@@ -245,11 +238,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["@shoelace-style/shoelace@2.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "2.0.0")
@@ -275,11 +267,10 @@ class TestErrorHandling:
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["nonexistent@1.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
 
@@ -302,11 +293,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
 
@@ -327,11 +317,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         monkeypatch.setattr(cli, "ensure_esbuild", lambda: Path("/mock/esbuild"))
         monkeypatch.setattr(cli, "resolve_version", lambda pkg, ver: "1.0.0")
@@ -353,11 +342,10 @@ output = "static/js"
         from starelements import cli
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["test-pkg@1.0.0"]
-output = "static/js"
-''')
+""")
 
         def mock_ensure():
             raise OSError("Permission denied")

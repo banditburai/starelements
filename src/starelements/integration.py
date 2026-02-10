@@ -1,10 +1,10 @@
-"""Integration with StarHTML applications."""
-
+import time
 from pathlib import Path
-from typing import Type
+from typing import Any
 
-from .decorator import get_registered_elements
-from .generator import generate_template_ft
+from .core import ElementDef
+
+_CODEC_MAP = {int: "int", float: "float", str: "string", bool: "boolean"}
 
 
 def get_static_path() -> Path:
@@ -15,8 +15,83 @@ def get_runtime_path() -> Path:
     return get_static_path() / "starelements.js"
 
 
-def _generate_component_css(elem_def) -> list[str]:
-    """Generate CSS rules for a single component."""
+def _value_to_js(value: Any) -> str:
+    # Prevent Datastar's expression preprocessor from mangling @ and $ chars
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        from starhtml.datastar import _safe_js_string
+
+        return _safe_js_string(value)
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}: {_value_to_js(v)}" for k, v in value.items()) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(_value_to_js(v) for v in value) + "]"
+    return str(value)
+
+
+def _extract_signals_from_ft(ft: Any, component_signals: list | None = None) -> tuple[Any, dict[str, Any]]:
+    from starhtml.datastar import Expr, Signal
+
+    signals: dict[str, Any] = {}
+    seen_ids = set()
+
+    if component_signals:
+        for sig in component_signals:
+            if sig._id not in seen_ids:
+                signals[sig._name] = {"initial": sig._initial, "type": sig.type_}
+                seen_ids.add(sig._id)
+
+    def collect_from_node(node: Any):
+        if hasattr(node, "__signals_found"):
+            for sig in node.__signals_found:
+                if isinstance(sig, Signal) and sig._id not in seen_ids:
+                    if isinstance(sig._initial, Expr):
+                        continue  # Computed signals handled by StarHTML's data-computed:* attrs
+                    signals[sig._name] = {"initial": sig._initial, "type": sig.type_}
+                    seen_ids.add(sig._id)
+            delattr(node, "__signals_found")
+
+        if hasattr(node, "children"):
+            for child in node.children:
+                collect_from_node(child)
+
+    collect_from_node(ft)
+    return ft, signals
+
+
+def generate_template_ft(elem_def: ElementDef, cls: type):
+    from starhtml import Template
+
+    from .signals import collect_local_signals
+
+    children = []
+    signals = {}
+
+    if elem_def.render_fn:
+        with collect_local_signals() as component_signals:
+            ft = elem_def.render_fn()
+        cleaned_ft, signals = _extract_signals_from_ft(ft, component_signals)
+        if cleaned_ft is not None:
+            children.append(cleaned_ft)
+
+    attrs = {f"data-star:{elem_def.tag_name}": True}
+    attrs.update({f"data-import:{k}": v for k, v in elem_def.imports.items()})
+    attrs.update({f"data-script:{k}": v for k, v in elem_def.scripts.items()})
+    if elem_def.shadow:
+        attrs["data-shadow-open"] = True
+    for name, info in signals.items():
+        codec = _CODEC_MAP.get(info["type"], "string")
+        attrs[f"data-signal:{name}"] = f"{codec}|={_value_to_js(info['initial'])}"
+
+    return Template(*children, **attrs)
+
+
+def _generate_component_css(elem_def: ElementDef) -> list[str]:
     name = elem_def.tag_name
     dims = [f"{k}:{v}" for k, v in elem_def.dimensions.items()]
 
@@ -51,27 +126,13 @@ _SKELETON_CSS = (
 )
 
 
-def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/starelements", debug: bool = False) -> tuple:
-    """Generate header elements for starelements components.
-
-    Single pass through components to collect all header data.
-
-    Args:
-        *component_classes: Component classes decorated with @element
-        base_url: Base URL for serving static files (default: "/_pkg/starelements")
-        debug: Enable debug mode with cache busting (default: False)
-
-    Returns:
-        Tuple of (Style, Script, Templates...) for inclusion in page headers.
-    """
+def _starelements_hdrs(*component_classes: type, pkg_prefix: str = "/_pkg", debug: bool = False) -> tuple:
     from starhtml import Script, Style
 
     css_rules = []
     templates = []
-    import_map = {}
     has_skeleton = False
 
-    # Single pass through all components
     for cls in component_classes:
         if not hasattr(cls, "_element_def"):
             raise ValueError(f"{cls} is not decorated with @element")
@@ -80,51 +141,18 @@ def starelements_hdrs(*component_classes: Type, base_url: str = "/_pkg/stareleme
 
         if elem_def.skeleton:
             has_skeleton = True
-        if elem_def.import_map:
-            import_map.update(elem_def.import_map)
-        # Auto-add URL imports to import_map (simplifies simple cases)
-        # If imports value is a URL, add alias→URL to import_map
-        for alias, specifier in elem_def.imports.items():
-            if specifier.startswith(("http://", "https://", "/")):
-                import_map[alias] = specifier
         css_rules.extend(_generate_component_css(elem_def))
         templates.append(generate_template_ft(elem_def, cls))
 
-    # Build hdrs
     hdrs = []
     if css_rules:
         if has_skeleton:
             css_rules.insert(0, _SKELETON_CSS)
         hdrs.append(Style("".join(css_rules)))
 
-    # Add cache busting in debug mode
-    import time
     cache_bust = f"?v={int(time.time())}" if debug else ""
 
-    hdrs.append(Script(type="module", src=f"{base_url}/starelements.min.js{cache_bust}"))
+    hdrs.append(Script(type="module", src=f"{pkg_prefix}/starelements/starelements.min.js{cache_bust}"))
     hdrs.extend(templates)
 
     return tuple(hdrs)
-
-
-def register(app, *component_classes: Type, prefix: str = "/_pkg/starelements"):
-    """
-    Register starelements with a StarHTML app.
-
-    Example:
-        app, rt = star_app()
-        register(app)  # Registers all @element components
-    """
-    if not component_classes:
-        component_classes = tuple(get_registered_elements())
-    if not component_classes:
-        return
-
-    hdrs = starelements_hdrs(*component_classes, base_url=prefix)
-
-    app.register_package(
-        "starelements",
-        static_path=get_static_path(),
-        hdrs=hdrs,
-        prefix=prefix,
-    )

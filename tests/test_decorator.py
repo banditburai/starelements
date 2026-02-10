@@ -1,88 +1,120 @@
 """Tests for @element decorator."""
 
 import pytest
+
 from starelements import element
-from starelements.core import ElementDef
+from starelements.core import ElementDef, ElementInstance
 
 
 class TestElementDecorator:
     def test_decorator_attaches_element_def(self):
-        """@element attaches an ElementDef to the class."""
+        """@element attaches an ElementDef."""
+
         @element("test-component")
-        class TestComponent:
-            pass
+        def TestComponent():
+            return None
 
         assert hasattr(TestComponent, "_element_def")
         assert isinstance(TestComponent._element_def, ElementDef)
         assert TestComponent._element_def.tag_name == "test-component"
 
-    def test_render_method_captured(self):
-        """render() method is captured."""
+    def test_render_fn_captured(self):
+        """The decorated function IS the render_fn."""
+
         @element("render-test")
-        class RenderTest:
-            def render(self):
-                return "<div>Test</div>"
+        def RenderTest():
+            return "hello"
 
         assert RenderTest._element_def.render_fn is not None
+        assert RenderTest._element_def.render_fn() == "hello"
 
-    def test_setup_method_captured(self):
-        """setup() method is captured."""
-        @element("setup-test")
-        class SetupTest:
-            def setup(self) -> str:
-                return "console.log('setup');"
+    def test_imports_from_decorator(self):
+        """imports param sets imports on element def."""
 
-        assert SetupTest._element_def.setup_fn is not None
+        @element("import-test", imports={"peaks": "https://esm.sh/peaks.js"})
+        def ImportTest():
+            return None
 
-    def test_imports_extracted(self):
-        """imports dict is extracted."""
-        @element("import-test")
-        class ImportTest:
-            imports = {"Peaks": "https://esm.sh/peaks.js"}
+        assert ImportTest._element_def.imports == {"peaks": "https://esm.sh/peaks.js"}
 
-        assert ImportTest._element_def.imports == {"Peaks": "https://esm.sh/peaks.js"}
+    def test_import_map_from_decorator(self):
+        """import_map param sets import_map on element def."""
 
-    def test_scripts_extracted(self):
-        """scripts dict is extracted (for UMD loading)."""
-        @element("scripts-test")
-        class ScriptsTest:
-            scripts = {"Peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"}
+        @element("map-test", import_map={"foo": "https://example.com/foo.js"})
+        def MapTest():
+            return None
 
-        assert ScriptsTest._element_def.scripts == {"Peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"}
+        assert MapTest._element_def.import_map == {"foo": "https://example.com/foo.js"}
 
-    def test_events_class_extracted(self):
-        """Events inner class is extracted."""
-        @element("event-test")
-        class EventTest:
-            class Events:
-                change: dict
-                click: None
+    def test_scripts_from_decorator(self):
+        """scripts param sets scripts on element def."""
 
-        assert "change" in EventTest._element_def.events
-        assert "click" in EventTest._element_def.events
+        @element("scripts-test", scripts={"peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"})
+        def ScriptsTest():
+            return None
+
+        assert ScriptsTest._element_def.scripts == {"peaks": "https://unpkg.com/peaks.js@3/dist/peaks.js"}
+
+    def test_events_from_decorator(self):
+        """events param sets events on element def."""
+
+        @element("events-test", events=["change", "click"])
+        def EventsTest():
+            return None
+
+        assert EventsTest._element_def.events == ["change", "click"]
+
+    def test_uppercase_import_alias_rejected(self):
+        """Uppercase import aliases are rejected (HTML lowercases attributes)."""
+        with pytest.raises(ValueError, match="must be lowercase"):
+
+            @element("upper-import-test", imports={"Peaks": "https://esm.sh/peaks.js"})
+            def UpperImportTest():
+                return None
+
+    def test_uppercase_script_alias_rejected(self):
+        """Uppercase script aliases are rejected."""
+        with pytest.raises(ValueError, match="must be lowercase"):
+
+            @element("upper-script-test", scripts={"Chart": "https://cdn.example.com/chart.js"})
+            def UpperScriptTest():
+                return None
 
     def test_shadow_option(self):
         """shadow=True enables Shadow DOM."""
+
         @element("shadow-test", shadow=True)
-        class ShadowTest:
-            pass
+        def ShadowTest():
+            return None
 
         assert ShadowTest._element_def.shadow is True
 
-    def test_decorated_class_is_callable(self):
-        """Decorated class can be called to create instances."""
+    def test_is_callable(self):
+        """Decorated function can be called to create instances."""
+
         @element("callable-test")
-        class CallableTest:
-            pass
+        def CallableTest():
+            return None
 
         instance = CallableTest()
         assert instance is not None
 
+    def test_callable_with_kwargs(self):
+        """Calling with kwargs returns an ElementInstance."""
+
+        @element("kwargs-test")
+        def KwargsTest():
+            return None
+
+        instance = KwargsTest(count=5)
+        assert isinstance(instance, ElementInstance)
+
     def test_height_shorthand(self):
         """height param sets min-height dimension."""
+
         @element("height-test", height="100px")
-        class HeightTest:
-            pass
+        def HeightTest():
+            return None
 
         dims = HeightTest._element_def.dimensions
         assert dims.get("min-height") == "100px"
@@ -90,35 +122,51 @@ class TestElementDecorator:
 
     def test_height_enables_skeleton(self):
         """height param enables skeleton by default."""
+
         @element("skeleton-auto-test", height="50px")
-        class SkeletonAutoTest:
-            pass
+        def SkeletonAutoTest():
+            return None
 
         assert SkeletonAutoTest._element_def.skeleton is True
 
     def test_no_height_no_skeleton(self):
         """Without height, skeleton defaults to False."""
+
         @element("no-skeleton-test")
-        class NoSkeletonTest:
-            pass
+        def NoSkeletonTest():
+            return None
 
         assert NoSkeletonTest._element_def.skeleton is False
 
     def test_explicit_skeleton_override(self):
         """skeleton=False overrides auto-enable from height."""
+
         @element("explicit-no-skel", height="80px", skeleton=False)
-        class ExplicitNoSkel:
-            pass
+        def ExplicitNoSkel():
+            return None
 
         assert ExplicitNoSkel._element_def.skeleton is False
 
-    def test_static_setup_method_captured(self):
-        """static_setup() method is captured for one-time initialization."""
-        @element("static-setup-test")
-        class StaticSetupTest:
-            def static_setup(self):
-                return "window.TEST_STATIC = true;"
+    def test_preserves_name_and_doc(self):
+        """Function name and docstring are preserved."""
 
-        assert StaticSetupTest._element_def.static_setup_fn is not None
-        code = StaticSetupTest._element_def.static_setup_fn(StaticSetupTest())
-        assert "TEST_STATIC" in code
+        @element("meta-test")
+        def MyComponent():
+            """My docstring."""
+            return None
+
+        assert MyComponent.__name__ == "MyComponent"
+        assert MyComponent.__doc__ == "My docstring."
+
+    def test_defaults_empty(self):
+        """Defaults for imports/scripts/events are empty."""
+
+        @element("defaults-test")
+        def DefaultsTest():
+            return None
+
+        d = DefaultsTest._element_def
+        assert d.imports == {}
+        assert d.import_map == {}
+        assert d.scripts == {}
+        assert d.events == []

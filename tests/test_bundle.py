@@ -1,8 +1,9 @@
 """Tests for JavaScript bundling with esbuild."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+import pytest
 
 
 class TestBundlePackage:
@@ -27,7 +28,7 @@ class TestBundlePackage:
             return entry
 
         monkeypatch.setattr(bundle, "resolve_version", mock_resolve)
-        monkeypatch.setattr(bundle, "download_package", mock_download)
+        monkeypatch.setattr(bundle, "download_package_recursive", mock_download)
 
         # Mock subprocess.run to simulate esbuild
         def mock_run(cmd, **kwargs):
@@ -71,7 +72,7 @@ class TestBundlePackage:
             return entry
 
         monkeypatch.setattr(bundle, "resolve_version", mock_resolve)
-        monkeypatch.setattr(bundle, "download_package", mock_download)
+        monkeypatch.setattr(bundle, "download_package_recursive", mock_download)
 
         captured_cmd = []
 
@@ -115,7 +116,7 @@ class TestBundlePackage:
             return entry
 
         monkeypatch.setattr(bundle, "resolve_version", mock_resolve)
-        monkeypatch.setattr(bundle, "download_package", mock_download)
+        monkeypatch.setattr(bundle, "download_package_recursive", mock_download)
 
         captured_cmd = []
 
@@ -159,7 +160,7 @@ class TestBundlePackage:
             return entry
 
         monkeypatch.setattr(bundle, "resolve_version", mock_resolve)
-        monkeypatch.setattr(bundle, "download_package", mock_download)
+        monkeypatch.setattr(bundle, "download_package_recursive", mock_download)
 
         def mock_run(cmd, **kwargs):
             result = MagicMock()
@@ -192,7 +193,7 @@ class TestBundlePackage:
             return entry
 
         monkeypatch.setattr(bundle, "resolve_version", mock_resolve)
-        monkeypatch.setattr(bundle, "download_package", mock_download)
+        monkeypatch.setattr(bundle, "download_package_recursive", mock_download)
 
         captured_cmd = []
 
@@ -217,3 +218,41 @@ class TestBundlePackage:
 
         assert "--format=esm" in captured_cmd
         assert "--bundle" in captured_cmd
+
+    def test_bundle_package_with_entry_point(self, tmp_path, monkeypatch):
+        """bundle_package uses download_package when entry_point is specified."""
+        from starelements.bundler import bundle
+
+        mock_esbuild = tmp_path / "esbuild"
+        mock_esbuild.write_text("#!/bin/sh\necho 0.24.2")
+        mock_esbuild.chmod(0o755)
+        monkeypatch.setattr(bundle, "ensure_esbuild", lambda: mock_esbuild)
+        monkeypatch.setattr(bundle, "resolve_version", lambda *a: "3.4.2")
+
+        download_calls = []
+
+        def mock_download(pkg, ver, dest, entry_point=None):
+            download_calls.append({"pkg": pkg, "entry_point": entry_point})
+            entry = dest / "peaks_js" / "peaks.js"
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            entry.write_text("export default 'peaks';")
+            return entry
+
+        monkeypatch.setattr(bundle, "download_package", mock_download)
+
+        def mock_run(cmd, **kwargs):
+            for arg in cmd:
+                if arg.startswith("--outfile="):
+                    Path(arg.split("=")[1]).write_text("// bundled")
+            result = MagicMock()
+            result.returncode = 0
+            result.stderr = ""
+            return result
+
+        monkeypatch.setattr("subprocess.run", mock_run)
+
+        output = tmp_path / "output.js"
+        bundle.bundle_package("peaks.js", "3", output, entry_point="dist/peaks.js")
+
+        assert len(download_calls) == 1
+        assert download_calls[0]["entry_point"] == "dist/peaks.js"

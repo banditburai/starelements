@@ -1,14 +1,12 @@
 """Tests for lock file management."""
 
 import json
-import pytest
-from pathlib import Path
 
 
 class TestLockedPackage:
     def test_locked_package_fields(self):
         """LockedPackage has required fields."""
-        from starelements.bundler.lock import LockedPackage
+        from starelements.bundler.config import LockedPackage
 
         pkg = LockedPackage(
             name="test-pkg",
@@ -28,7 +26,7 @@ class TestLockedPackage:
 class TestLockFile:
     def test_lock_file_defaults(self):
         """LockFile has sensible defaults."""
-        from starelements.bundler.lock import LockFile
+        from starelements.bundler.config import LockFile
 
         lock = LockFile()
         assert lock.version == 1
@@ -37,7 +35,7 @@ class TestLockFile:
 
     def test_lock_file_with_packages(self):
         """LockFile can store packages."""
-        from starelements.bundler.lock import LockFile, LockedPackage
+        from starelements.bundler.config import LockedPackage, LockFile
 
         lock = LockFile(esbuild_version="0.24.2")
         lock.packages["test-pkg"] = LockedPackage(
@@ -55,7 +53,7 @@ class TestLockFile:
 class TestComputeIntegrity:
     def test_compute_integrity_sha256(self, tmp_path):
         """compute_integrity returns SHA256 hash."""
-        from starelements.bundler.lock import compute_integrity
+        from starelements.bundler.config import compute_integrity
 
         test_file = tmp_path / "test.js"
         test_file.write_text("console.log('hello');")
@@ -68,7 +66,7 @@ class TestComputeIntegrity:
 class TestReadWriteLockFile:
     def test_write_lock_file_creates_json(self, tmp_path):
         """write_lock_file creates valid JSON."""
-        from starelements.bundler.lock import LockFile, LockedPackage, write_lock_file
+        from starelements.bundler.config import LockedPackage, LockFile, write_lock_file
 
         lock_path = tmp_path / "starelements.lock"
         lock = LockFile(esbuild_version="0.24.2")
@@ -90,22 +88,26 @@ class TestReadWriteLockFile:
 
     def test_read_lock_file_parses_json(self, tmp_path):
         """read_lock_file parses existing lock file."""
-        from starelements.bundler.lock import read_lock_file
+        from starelements.bundler.config import read_lock_file
 
         lock_path = tmp_path / "starelements.lock"
-        lock_path.write_text(json.dumps({
-            "version": 1,
-            "esbuild_version": "0.24.2",
-            "packages": {
-                "test": {
-                    "name": "test",
-                    "version": "1.0.0",
-                    "integrity": "sha256-abc",
-                    "source_url": "https://example.com",
-                    "bundled_at": "2024-12-28T12:00:00",
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "esbuild_version": "0.24.2",
+                    "packages": {
+                        "test": {
+                            "name": "test",
+                            "version": "1.0.0",
+                            "integrity": "sha256-abc",
+                            "source_url": "https://example.com",
+                            "bundled_at": "2024-12-28T12:00:00",
+                        }
+                    },
                 }
-            }
-        }))
+            )
+        )
 
         lock = read_lock_file(lock_path)
         assert lock.version == 1
@@ -114,7 +116,7 @@ class TestReadWriteLockFile:
 
     def test_read_lock_file_missing_returns_empty(self, tmp_path):
         """read_lock_file returns empty LockFile for missing file."""
-        from starelements.bundler.lock import read_lock_file
+        from starelements.bundler.config import read_lock_file
 
         lock_path = tmp_path / "nonexistent.lock"
         lock = read_lock_file(lock_path)
@@ -124,9 +126,7 @@ class TestReadWriteLockFile:
 
     def test_lock_file_roundtrip(self, tmp_path):
         """write then read preserves data."""
-        from starelements.bundler.lock import (
-            LockFile, LockedPackage, read_lock_file, write_lock_file
-        )
+        from starelements.bundler.config import LockedPackage, LockFile, read_lock_file, write_lock_file
 
         lock_path = tmp_path / "starelements.lock"
 

@@ -13,7 +13,8 @@ class TestRuntimeFile:
         """Runtime exports initStarElements function."""
         runtime_path = Path(__file__).parent.parent / "src" / "starelements" / "static" / "starelements.js"
         content = runtime_path.read_text()
-        assert "export function initStarElements" in content
+        assert "function initStarElements" in content
+        assert "initStarElements" in content
 
     def test_runtime_has_register_function(self):
         """Runtime has registerStarElement function."""

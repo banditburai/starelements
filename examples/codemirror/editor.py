@@ -1,91 +1,91 @@
-from starhtml import star_app, Div, Button, Signal, H1, P, Pre, Style, evt
-from starelements import element, ComponentSignal
+"""Example: CodeMirror 6 editor component using starelements with import maps."""
 
-@element("code-editor", height="300px", skeleton=True)
-class CodeEditor:
-    """
-    A CodeMirror 6 based code editor component.
+from starhtml import H1, Button, Div, P, Pre, Script, Signal, Style, evt, serve, star_app
 
-    Uses ComponentSignal for component-local state ($$value, $$theme, $$lang).
-    In setup(), use $$ for local and $ for global signals.
-    """
-    
-    # UNPKG Strategy: Manual Dependency Resolution
-    # We use unpkg raw ESM files which have bare imports internally (e.g., @lezer/common).
-    # This requires mapping ALL dependencies in import_map for the browser to resolve them.
-    #
-    # For simpler cases with bundled/self-contained ESM modules, you can skip import_map
-    # and use URLs directly in imports:
-    #   imports = {"chart": "https://cdn.jsdelivr.net/npm/chart.js/+esm"}
+from starelements import Local, element
 
-    _STATE_VER = "6.4.1"
-    _VIEW_VER = "6.28.1"
-    _LANG_VER = "6.10.1"
-    _CMDS_VER = "6.5.0"
-    _AUTO_VER = "6.16.0"
-    _SEARCH_VER = "6.5.6"
-    _LINT_VER = "6.8.1"
-    _PY_VER = "6.1.6"
-    _JS_VER = "6.2.2"
-    _THEME_VER = "6.1.2"
-    
-    # Core Maps
-    import_map = {
-        # CodeMirror Packages
-        "@codemirror/state": f"https://unpkg.com/@codemirror/state@{_STATE_VER}/dist/index.js",
-        "@codemirror/view": f"https://unpkg.com/@codemirror/view@{_VIEW_VER}/dist/index.js",
-        "@codemirror/language": f"https://unpkg.com/@codemirror/language@{_LANG_VER}/dist/index.js",
-        "@codemirror/commands": f"https://unpkg.com/@codemirror/commands@{_CMDS_VER}/dist/index.js",
-        "@codemirror/autocomplete": f"https://unpkg.com/@codemirror/autocomplete@{_AUTO_VER}/dist/index.js",
-        "@codemirror/search": f"https://unpkg.com/@codemirror/search@{_SEARCH_VER}/dist/index.js",
-        "@codemirror/lint": f"https://unpkg.com/@codemirror/lint@{_LINT_VER}/dist/index.js",
-        
-        # Languages & Themes
-        "@codemirror/lang-python": f"https://unpkg.com/@codemirror/lang-python@{_PY_VER}/dist/index.js",
-        "@codemirror/lang-javascript": f"https://unpkg.com/@codemirror/lang-javascript@{_JS_VER}/dist/index.js",
-        "@codemirror/theme-one-dark": f"https://unpkg.com/@codemirror/theme-one-dark@{_THEME_VER}/dist/index.js",
-        
-        # Transitive Dependencies (Must map these or it fails!)
-        "style-mod": "https://unpkg.com/style-mod@4.1.0/src/style-mod.js",
-        "w3c-keyname": "https://unpkg.com/w3c-keyname@2.2.8/index.js",
-        "@lezer/common": "https://unpkg.com/@lezer/common@1.2.1/dist/index.js",
-        "@lezer/highlight": "https://unpkg.com/@lezer/highlight@1.2.0/dist/index.js",
-        "@lezer/lr": "https://unpkg.com/@lezer/lr@1.4.0/dist/index.js",
-        "@lezer/python": "https://unpkg.com/@lezer/python@1.1.14/dist/index.js",
-        "@lezer/javascript": "https://unpkg.com/@lezer/javascript@1.4.14/dist/index.js",
-        "crelt": "https://unpkg.com/crelt@1.0.6/index.js"
-    }
-    
-    # Imports use bare specifiers (resolved by map)
-    imports = {
-        "state": "@codemirror/state",
-        "view": "@codemirror/view",
-        "language": "@codemirror/language",  # For syntax highlighting
-        "commands": "@codemirror/commands",
-        "python": "@codemirror/lang-python",
-        "javascript": "@codemirror/lang-javascript",
-        "one_dark": "@codemirror/theme-one-dark"
-    }
+PYTHON_SNIPPET = """\
+from starhtml import star_app, Div, H1, serve
 
-    def render(self):
-        value = ComponentSignal("value", "")      # -> $$value in JS
-        theme = ComponentSignal("theme", "light") # -> $$theme in JS
-        lang = ComponentSignal("lang", "python")  # -> $$lang in JS
+app, rt = star_app()
 
-        return Div(
-            value, theme, lang,
-            Div(
-                data_ref="editor",
-                style="border: 1px solid #ccc; border-radius: 4px; overflow: hidden; height: 100%; text-align: left;",
-            ),
-            data_on_theme_change=("$$theme = evt.detail.value", {"trusted": True}),
-            data_on_lang_change=("$$lang = evt.detail.value", {"trusted": True}),
-            data_on_value_change=("$$value = evt.detail.value", {"trusted": True}),
-            style="height: 100%;",  # Fill parent container
-        )
+@rt("/")
+def home():
+    return Div(
+        H1("Hello, StarHTML!"),
+        style="padding: 2rem;",
+    )
 
-    def setup(self):
-        return """
+serve()
+"""
+
+JS_SNIPPET = """\
+import { effect, mergePatch, getPath } from 'datastar';
+
+// Reactive counter using Datastar signals
+mergePatch({ count: 0 });
+
+effect(() => {
+    const count = getPath('count');
+    console.log(`Count is now: ${count}`);
+});
+
+// Increment every second
+setInterval(() => {
+    const current = getPath('count');
+    mergePatch({ count: current + 1 });
+}, 1000);
+"""
+
+# --- CodeMirror dependency maps ---
+# unpkg serves raw ESM with bare imports internally (e.g., @lezer/common),
+# so we must map ALL transitive dependencies for the browser to resolve them.
+
+CM_IMPORT_MAP = {
+    "@codemirror/state": "https://unpkg.com/@codemirror/state@6.4.1/dist/index.js",
+    "@codemirror/view": "https://unpkg.com/@codemirror/view@6.28.1/dist/index.js",
+    "@codemirror/language": "https://unpkg.com/@codemirror/language@6.10.1/dist/index.js",
+    "@codemirror/commands": "https://unpkg.com/@codemirror/commands@6.5.0/dist/index.js",
+    "@codemirror/autocomplete": "https://unpkg.com/@codemirror/autocomplete@6.16.0/dist/index.js",
+    "@codemirror/search": "https://unpkg.com/@codemirror/search@6.5.6/dist/index.js",
+    "@codemirror/lint": "https://unpkg.com/@codemirror/lint@6.8.1/dist/index.js",
+    "@codemirror/lang-python": "https://unpkg.com/@codemirror/lang-python@6.1.6/dist/index.js",
+    "@codemirror/lang-javascript": "https://unpkg.com/@codemirror/lang-javascript@6.2.2/dist/index.js",
+    "@codemirror/theme-one-dark": "https://unpkg.com/@codemirror/theme-one-dark@6.1.2/dist/index.js",
+    "@lezer/common": "https://unpkg.com/@lezer/common@1.2.1/dist/index.js",
+    "@lezer/highlight": "https://unpkg.com/@lezer/highlight@1.2.0/dist/index.js",
+    "@lezer/lr": "https://unpkg.com/@lezer/lr@1.4.0/dist/index.js",
+    "@lezer/python": "https://unpkg.com/@lezer/python@1.1.14/dist/index.js",
+    "@lezer/javascript": "https://unpkg.com/@lezer/javascript@1.4.14/dist/index.js",
+    "style-mod": "https://unpkg.com/style-mod@4.1.0/src/style-mod.js",
+    "w3c-keyname": "https://unpkg.com/w3c-keyname@2.2.8/index.js",
+    "crelt": "https://unpkg.com/crelt@1.0.6/index.js",
+}
+
+CM_IMPORTS = {
+    "state": "@codemirror/state",
+    "view": "@codemirror/view",
+    "language": "@codemirror/language",
+    "commands": "@codemirror/commands",
+    "highlight": "@lezer/highlight",
+    "python": "@codemirror/lang-python",
+    "javascript": "@codemirror/lang-javascript",
+    "one_dark": "@codemirror/theme-one-dark",
+}
+
+
+@element("code-editor", height="320px", skeleton=True, imports=CM_IMPORTS, import_map=CM_IMPORT_MAP)
+def CodeEditor():
+    """CodeMirror 6 editor with theme/language switching."""
+    value = Local("value", "")
+    theme = Local("theme", "light")
+    lang = Local("lang", "python")
+
+    return Div(
+        value,
+        theme,
+        lang,
+        Script("""
             if (!state || !view || !commands || !language) {
                 console.error('[CodeEditor] Failed to load dependencies');
                 return;
@@ -94,9 +94,31 @@ class CodeEditor:
             const { EditorState, Compartment } = state;
             const { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } = view;
             const { defaultKeymap, history, historyKeymap } = commands;
-            const { syntaxHighlighting, defaultHighlightStyle, HighlightStyle } = language;
+            const { syntaxHighlighting, HighlightStyle } = language;
+            const { tags } = highlight;
 
-            // Base extensions (theme-independent)
+            const lightStyle = HighlightStyle.define([
+                { tag: tags.keyword, color: '#d73a49' },
+                { tag: tags.controlKeyword, color: '#d73a49', fontWeight: '500' },
+                { tag: tags.definitionKeyword, color: '#d73a49' },
+                { tag: tags.operatorKeyword, color: '#d73a49' },
+                { tag: [tags.function(tags.variableName), tags.function(tags.definition(tags.variableName))], color: '#6f42c1' },
+                { tag: tags.definition(tags.variableName), color: '#e36209' },
+                { tag: tags.variableName, color: '#24292e' },
+                { tag: [tags.className, tags.definition(tags.className)], color: '#6f42c1' },
+                { tag: tags.propertyName, color: '#005cc5' },
+                { tag: [tags.string, tags.special(tags.string)], color: '#032f62' },
+                { tag: tags.number, color: '#005cc5' },
+                { tag: tags.bool, color: '#005cc5' },
+                { tag: tags.comment, color: '#6a737d', fontStyle: 'italic' },
+                { tag: tags.operator, color: '#d73a49' },
+                { tag: tags.punctuation, color: '#24292e' },
+                { tag: tags.self, color: '#005cc5' },
+                { tag: [tags.meta, tags.annotation], color: '#6f42c1' },
+                { tag: tags.attributeName, color: '#6f42c1' },
+                { tag: tags.typeName, color: '#6f42c1' },
+            ]);
+
             const setupExtensions = [
                 lineNumbers(),
                 highlightActiveLineGutter(),
@@ -114,14 +136,9 @@ class CodeEditor:
             const themeConfig = new Compartment();
             const langConfig = new Compartment();
 
-            // Theme includes both editor styling AND syntax highlighting
             const getTheme = (t) => {
-                if (t === 'dark' && one_dark) {
-                    // oneDark includes both theme and syntax highlighting
-                    return one_dark.oneDark;
-                }
-                // Light theme: just use default syntax highlighting
-                return syntaxHighlighting(defaultHighlightStyle);
+                if (t === 'dark' && one_dark) return one_dark.oneDark;
+                return syntaxHighlighting(lightStyle);
             };
 
             const getLang = (l) => {
@@ -143,9 +160,8 @@ class CodeEditor:
                         langConfig.of(getLang(initialLang)),
                         EditorView.updateListener.of(update => {
                             if (update.docChanged) {
-                                const val = update.state.doc.toString();
                                 el.dispatchEvent(new CustomEvent('change', {
-                                    detail: { value: val },
+                                    detail: { value: update.state.doc.toString() },
                                     bubbles: true
                                 }));
                             }
@@ -155,27 +171,20 @@ class CodeEditor:
                 parent: refs('editor')
             });
 
-            // Separate effects for theme/lang vs value to avoid unwanted resets
-
-            // Effect 1: Theme and language switching (doesn't touch content)
+            // Separate effects: theme/lang switching doesn't reset editor content
             effect(() => {
-                const currentTheme = $$theme;
-                const currentLang = $$lang;
-
                 view_inst.dispatch({
                     effects: [
-                        themeConfig.reconfigure(getTheme(currentTheme)),
-                        langConfig.reconfigure(getLang(currentLang))
+                        themeConfig.reconfigure(getTheme($$theme)),
+                        langConfig.reconfigure(getLang($$lang))
                     ]
                 });
             });
 
-            // Effect 2: External value changes (only if value signal is explicitly set)
-            // This is for programmatic updates, not user typing
+            // Only update content when value signal changes externally (not from user typing)
             let lastExternalValue = initialDoc;
             effect(() => {
                 const currentValue = $$value;
-                // Only update if value changed externally (not from user typing)
                 if (currentValue !== undefined && currentValue !== lastExternalValue) {
                     lastExternalValue = currentValue;
                     const currentDoc = view_inst.state.doc.toString();
@@ -187,104 +196,267 @@ class CodeEditor:
                 }
             });
 
-            onCleanup(() => {
-                view_inst.destroy();
-            });
-        """
+            onCleanup(() => view_inst.destroy());
+        """),
+        Div(
+            data_ref="editor",
+            style="border: 1px solid #ccc; border-radius: 4px; overflow: hidden; height: 100%; text-align: left;",
+        ),
+        data_on_theme_change=("$$theme = evt.detail.value", {"trusted": True}),
+        data_on_lang_change=("$$lang = evt.detail.value", {"trusted": True}),
+        data_on_value_change=("$$value = evt.detail.value", {"trusted": True}),
+        style="height: 100%;",
+    )
+
 
 app, rt = star_app()
 app.register(CodeEditor)
-app.devtools_json()
+
 
 @rt("/")
 def home():
-    # Page-level signals for tracking editor output
-    (current_code := Signal("current_code", "print('Hello, StarHTML!')"))
-    (output := Signal("output", "Waiting for run..."))
-    (editor_theme := Signal("editor_theme", "light"))
-    (editor_lang := Signal("editor_lang", "python"))
-
     return Div(
-        current_code, output, editor_theme, editor_lang,
+        (current_code := Signal("current_code", PYTHON_SNIPPET.strip())),
+        (output := Signal("output", "")),
+        (editor_theme := Signal("editor_theme", "light")),
+        (editor_lang := Signal("editor_lang", "python")),
+        Style("""
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-        H1("StarElements CodeMirror Demo"),
-        P("A Python-native web component wrapping CodeMirror 6."),
+            *, *::before, *::after { box-sizing: border-box; }
 
-        # Controls - set page signals, component reacts via attribute binding
-        # Note: data-class expects {className: boolean} object, not a string
+            body {
+                margin: 0;
+                background: #f8f9fb;
+                color: #1a1a2e;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+
+            .demo-container {
+                max-width: 860px;
+                margin: 0 auto;
+                padding: 48px 32px 64px;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            }
+
+            .demo-header {
+                margin-bottom: 32px;
+            }
+
+            .demo-header h1 {
+                font-size: 1.75rem;
+                font-weight: 600;
+                letter-spacing: -0.025em;
+                color: #0f172a;
+                margin: 0 0 6px 0;
+            }
+
+            .demo-header p {
+                font-size: 0.925rem;
+                color: #64748b;
+                margin: 0;
+                line-height: 1.5;
+            }
+
+            .editor-card {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow:
+                    0 1px 3px rgba(0, 0, 0, 0.04),
+                    0 4px 12px rgba(0, 0, 0, 0.03);
+            }
+
+            .toolbar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 14px;
+                background: #f8fafc;
+                border-bottom: 1px solid #e2e8f0;
+                gap: 12px;
+            }
+
+            .lang-group {
+                display: flex;
+                gap: 2px;
+                background: #e2e8f0;
+                border-radius: 8px;
+                padding: 2px;
+            }
+
+            .btn {
+                padding: 6px 14px;
+                border: none;
+                background: transparent;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                color: #64748b;
+                transition: all 0.15s ease;
+                line-height: 1.4;
+            }
+
+            .btn:hover {
+                color: #1e293b;
+                background: rgba(0, 0, 0, 0.04);
+            }
+
+            .btn.active {
+                background: #fff;
+                color: #0f172a;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+            }
+
+            .btn-theme {
+                padding: 6px 12px;
+                border: 1px solid #e2e8f0;
+                background: #fff;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                color: #475569;
+                transition: all 0.15s ease;
+            }
+
+            .btn-theme:hover {
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+                color: #1e293b;
+            }
+
+            .editor-wrap {
+                height: 320px;
+            }
+
+            .action-bar {
+                display: flex;
+                justify-content: flex-end;
+                padding: 12px 14px;
+                background: #f8fafc;
+                border-top: 1px solid #e2e8f0;
+            }
+
+            .run-btn {
+                padding: 8px 20px;
+                border: none;
+                background: #0f172a;
+                color: #fff;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 600;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                transition: all 0.15s ease;
+                letter-spacing: 0.01em;
+            }
+
+            .run-btn:hover {
+                background: #1e293b;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+            }
+
+            .run-btn:active {
+                transform: translateY(0);
+                box-shadow: none;
+            }
+
+            .output-section {
+                margin-top: 24px;
+            }
+
+            .output-label {
+                font-size: 0.8rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: #94a3b8;
+                margin: 0 0 8px 2px;
+            }
+
+            .terminal {
+                background: #0f172a;
+                color: #e2e8f0;
+                font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+                font-size: 13px;
+                line-height: 1.6;
+                padding: 16px 20px;
+                border-radius: 10px;
+                min-height: 80px;
+                overflow-x: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+                border: 1px solid #1e293b;
+                box-shadow:
+                    0 2px 4px rgba(0, 0, 0, 0.08),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+                margin: 0;
+            }
+
+            .terminal::before {
+                content: "$ ";
+                color: #38bdf8;
+                font-weight: 500;
+            }
+        """),
+        Div(
+            H1("StarElements CodeMirror Demo"),
+            P("A Python-native web component wrapping CodeMirror 6."),
+            cls="demo-header",
+        ),
         Div(
             Div(
-                Button("Python",
-                       data_on_click=editor_lang.set("python"),
-                       cls="btn",
-                       data_class_active=(editor_lang == "python")),
-                Button("JavaScript",
-                       data_on_click=editor_lang.set("javascript"),
-                       cls="btn",
-                       data_class_active=(editor_lang == "javascript")),
-                style="display: flex; gap: 10px;",
+                Div(
+                    Button(
+                        "Python",
+                        data_on_click=current_code.set(PYTHON_SNIPPET.strip()) + "; " + editor_lang.set("python"),
+                        cls="btn",
+                        data_class_active=(editor_lang == "python"),
+                    ),
+                    Button(
+                        "JavaScript",
+                        data_on_click=current_code.set(JS_SNIPPET.strip()) + "; " + editor_lang.set("javascript"),
+                        cls="btn",
+                        data_class_active=(editor_lang == "javascript"),
+                    ),
+                    cls="lang-group",
+                ),
+                Button(
+                    data_text=(editor_theme == "light").if_("Dark Mode", "Light Mode"),
+                    data_on_click=(editor_theme == "light").if_(editor_theme.set("dark"), editor_theme.set("light")),
+                    cls="btn-theme",
+                ),
+                cls="toolbar",
             ),
-            Button(
-                data_text=(editor_theme == "light").if_("Switch to Dark", "Switch to Light"),
-                data_on_click=(editor_theme == "light").if_(editor_theme.set("dark"), editor_theme.set("light")),
-                cls="btn",
+            CodeEditor(
+                value=PYTHON_SNIPPET.strip(),
+                data_attr_value=current_code,
+                data_attr_theme=editor_theme,
+                data_attr_lang=editor_lang,
+                data_on_change=current_code.set(evt.detail.value),
+                cls="editor-wrap",
             ),
-            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;",
+            Div(
+                Button("Run Code", data_on_click=output.set("Executing...\n\n" + current_code), cls="run-btn"),
+                cls="action-bar",
+            ),
+            cls="editor-card",
         ),
-
-        CodeEditor(
-            value="print('Hello, StarHTML!')",
-            # Bind attributes to page signals - component reacts via attributeChangedCallback
-            data_attr_theme=editor_theme,
-            data_attr_lang=editor_lang,
-            data_on_change=current_code.set(evt.detail.value),
-            style="height: 300px;",
-        ),
-
         Div(
-            Button(
-                "Run Code",
-                data_on_click=output.set("Executing...\n\n" + current_code),
-                cls="btn run-btn"
-            ),
-            style="margin-top: 10px; text-align: right;"
+            P("Output", cls="output-label"),
+            Pre(data_text=output, cls="terminal"),
+            cls="output-section",
         ),
-
-        Div(
-            H1("Output", style="margin-top: 20px; font-size: 1.5em;"),
-            Pre(data_text=output, style="padding: 20px; background: #222; color: #0f0; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-family: monospace; min-height: 50px;"),
-            style="margin-top: 20px;"
-        ),
-
-        Style("""
-            .btn {
-                padding: 8px 16px;
-                border: 1px solid #ccc;
-                background: white;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-            }
-            .btn:hover { background: #f0f0f0; }
-            .btn.active {
-                background: #007bff;
-                color: white;
-                border-color: #007bff;
-            }
-            .run-btn {
-                background: #28a745;
-                color: white;
-                border-color: #28a745;
-                font-weight: bold;
-            }
-            .run-btn:hover { background: #218838; }
-        """),
-
-        style="max-width: 900px; margin: 0 auto; padding: 40px; font-family: sans-serif;",
-        cls="demo-container"
+        cls="demo-container",
     )
 
+
 if __name__ == "__main__":
-    from starhtml import serve
-    print("Starting CodeMirror Demo...")
     serve(port=8000)

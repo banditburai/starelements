@@ -1,14 +1,14 @@
-"""Bundle JavaScript with esbuild."""
+"""Bundle and minify JavaScript using esbuild."""
 
 import subprocess
 import tempfile
 from pathlib import Path
 
 from .binary import ensure_esbuild
-from .fetcher import download_package_recursive, resolve_version
+from .fetcher import download_package, download_package_recursive, resolve_version
 
-# Timeout for esbuild subprocess (seconds)
 BUNDLE_TIMEOUT = 120
+MINIFY_TIMEOUT = 30
 
 
 def bundle_package(
@@ -18,44 +18,65 @@ def bundle_package(
     minify: bool = True,
     entry_point: str | None = None,
 ) -> None:
-    """Bundle a package into self-contained ESM.
-
-    Args:
-        package: Package name (e.g., "peaks.js")
-        version: Version specifier (e.g., "3" or "3.2.1")
-        output_path: Path to write bundled output
-        minify: Whether to minify the output (default: True)
-        entry_point: Custom entry point path (e.g., "dist/peaks.js")
-                     If None, auto-detects from package.json
-    """
     esbuild = ensure_esbuild()
     exact_version = resolve_version(package, version)
-
-    # Ensure output directory exists
-    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        # Create node_modules-like structure for esbuild resolution
-        node_modules = tmp_path / "node_modules"
+        # node_modules structure lets esbuild resolve bare specifier imports
+        node_modules = Path(tmp) / "node_modules"
         node_modules.mkdir()
-        
-        entry = download_package_recursive(package, exact_version, node_modules)
+
+        if entry_point:
+            entry = download_package(package, exact_version, node_modules, entry_point)
+        else:
+            entry = download_package_recursive(package, exact_version, node_modules)
 
         cmd = [
             str(esbuild),
             str(entry),
             "--bundle",
             "--format=esm",
-            f"--node-paths={node_modules}",
             f"--outfile={output_path}",
         ]
         if minify:
             cmd.append("--minify")
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=BUNDLE_TIMEOUT
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=BUNDLE_TIMEOUT,
+                cwd=tmp,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as err:
+            raise RuntimeError(f"esbuild bundle timed out after {BUNDLE_TIMEOUT}s") from err
+
         if result.returncode != 0:
             raise RuntimeError(f"esbuild failed: {result.stderr}")
+
+
+def minify_js(source: Path, output: Path | None = None) -> str:
+    esbuild = ensure_esbuild()
+
+    cmd = [str(esbuild), str(source), "--minify"]
+    if output:
+        cmd.append(f"--outfile={output}")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=MINIFY_TIMEOUT,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as err:
+        raise RuntimeError(f"esbuild minify timed out after {MINIFY_TIMEOUT}s") from err
+
+    if result.returncode != 0:
+        raise RuntimeError(f"esbuild minify failed: {result.stderr}")
+
+    return output.read_text() if output else result.stdout

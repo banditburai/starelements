@@ -1,6 +1,7 @@
 """Tests for starelements core definitions."""
 
 import pytest
+
 from starelements.core import ElementDef
 
 
@@ -21,6 +22,5 @@ class TestElementDef:
         assert elem.imports == {}
         assert elem.events == []
         assert elem.render_fn is None
-        assert elem.setup_fn is None
         assert elem.shadow is False
         assert elem.form_associated is False

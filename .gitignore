@@ -27,3 +27,17 @@ venv/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+docs/plans/
+.sesskey
+docs/
+src/starelements/static/
+.starelements/
+
+# Build outputs (compiled from typescript/)
+src/starelements/static/starelements.js
+src/starelements/static/starelements.min.js
+
+# Node/TypeScript
+node_modules/
+*.tsbuildinfo
+.claude

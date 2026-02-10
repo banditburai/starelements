@@ -1,8 +1,8 @@
 """End-to-end tests for bundler workflow."""
 
 import json
+
 import pytest
-from pathlib import Path
 
 
 class TestFullBundleWorkflow:
@@ -21,11 +21,10 @@ class TestFullBundleWorkflow:
 
         # Create pyproject.toml with a small, fast-loading package
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["preact@10"]
-output = "static/js"
-''')
+""")
 
         # Run bundle command
         result = cmd_bundle(tmp_path)
@@ -33,8 +32,8 @@ output = "static/js"
         # Should succeed
         assert result == 0
 
-        # Check output file exists
-        output = tmp_path / "static/js/preact.bundle.js"
+        # Check output file exists in .starelements/bundles/
+        output = tmp_path / ".starelements" / "bundles" / "preact.bundle.js"
         assert output.exists(), "Bundle output should exist"
 
         # Bundle should contain JavaScript
@@ -63,17 +62,16 @@ output = "static/js"
         from starelements.cli import cmd_bundle
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["@preact/signals-core@1"]
-output = "static/js"
-''')
+""")
 
         result = cmd_bundle(tmp_path)
         assert result == 0
 
         # Scoped packages use __ for / in filenames
-        output = tmp_path / "static/js/@preact__signals-core.bundle.js"
+        output = tmp_path / ".starelements" / "bundles" / "@preact__signals-core.bundle.js"
         assert output.exists()
 
         lock_path = tmp_path / "starelements.lock"
@@ -86,18 +84,17 @@ output = "static/js"
         from starelements.cli import cmd_bundle
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["preact@10", "htm@3"]
-output = "static/js"
-''')
+""")
 
         result = cmd_bundle(tmp_path)
         assert result == 0
 
-        # Both bundles should exist
-        assert (tmp_path / "static/js/preact.bundle.js").exists()
-        assert (tmp_path / "static/js/htm.bundle.js").exists()
+        bundles = tmp_path / ".starelements" / "bundles"
+        assert (bundles / "preact.bundle.js").exists()
+        assert (bundles / "htm.bundle.js").exists()
 
         # Lock file should have both packages
         lock_path = tmp_path / "starelements.lock"
@@ -111,17 +108,16 @@ output = "static/js"
         from starelements.cli import cmd_bundle
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["preact@10"]
-output = "static/js"
 minify = false
-''')
+""")
 
         result = cmd_bundle(tmp_path)
         assert result == 0
 
-        output = tmp_path / "static/js/preact.bundle.js"
+        output = tmp_path / ".starelements" / "bundles" / "preact.bundle.js"
         assert output.exists()
 
         # Non-minified should be larger and have readable formatting
@@ -135,11 +131,10 @@ minify = false
         from starelements.cli import cmd_bundle
 
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('''
+        pyproject.write_text("""
 [tool.starelements]
 bundle = ["preact@10"]
-output = "static/js"
-''')
+""")
 
         # First bundle
         cmd_bundle(tmp_path)
@@ -149,6 +144,7 @@ output = "static/js"
 
         # Small delay to ensure timestamp differs
         import time
+
         time.sleep(0.1)
 
         # Rebundle
@@ -160,7 +156,4 @@ output = "static/js"
         assert second_time >= first_time
 
         # Integrity should be the same (same version)
-        assert (
-            first_data["packages"]["preact"]["integrity"]
-            == second_data["packages"]["preact"]["integrity"]
-        )
+        assert first_data["packages"]["preact"]["integrity"] == second_data["packages"]["preact"]["integrity"]
