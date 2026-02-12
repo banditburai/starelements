@@ -20,8 +20,8 @@ class ElementDef:
     dimensions: dict[str, str] = field(default_factory=dict)
     skeleton: bool = False
     static_path: Path | None = None  # For consistency with PluginDef
-    signals: dict[str, tuple] = field(default_factory=dict)   # {name: (initial, type)}
-    methods: tuple[str, ...] = field(default_factory=tuple)   # snake_case names
+    signals: dict[str, tuple] = field(default_factory=dict)  # {name: (initial, type)}
+    methods: tuple[str, ...] = field(default_factory=tuple)  # snake_case names
 
     def __post_init__(self):
         self._validate_tag_name()
@@ -91,9 +91,7 @@ class ElementInstance:
 
             # Full Signal objects preserve initial values for FOUC prevention
             for sig_name, (initial, type_) in elem_def.signals.items():
-                self._refs[sig_name] = Signal(
-                    f"{self._name}_{sig_name}", initial, _ref_only=True, type_=type_
-                )
+                self._refs[sig_name] = Signal(f"{self._name}_{sig_name}", initial, _ref_only=True, type_=type_)
 
             for method in elem_def.methods:
                 self._refs[method] = js(f"${self._name}.{_snake2camel(method)}")
@@ -103,9 +101,7 @@ class ElementInstance:
             raise AttributeError(f"'{type(self).__name__}' has no attribute '{attr}'")
         if attr in self._refs:
             return self._refs[attr]
-        raise AttributeError(
-            f"Component '{self.elem_def.tag_name}' has no signal or method '{attr}'"
-        )
+        raise AttributeError(f"Component '{self.elem_def.tag_name}' has no signal or method '{attr}'")
 
     def signal(self, name: str, initial=None, **kw):
         """Create a namespaced Signal ref scoped to this component instance."""
