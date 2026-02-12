@@ -86,7 +86,21 @@ def generate_template_ft(elem_def: ElementDef, cls: type):
         attrs["data-shadow-open"] = True
     for name, info in signals.items():
         codec = _CODEC_MAP.get(info["type"], "string")
-        attrs[f"data-signal:{name}"] = f"{codec}|={_value_to_js(info['initial'])}"
+        # parseCodec expects raw values, not JS-quoted strings
+        match info["initial"]:
+            case None:
+                raw = ""
+            case bool() as b:
+                raw = "true" if b else "false"
+            case str() as s:
+                raw = s
+            case int() | float():
+                raw = str(info["initial"])
+            case dict() | list():
+                raw = _value_to_js(info["initial"])
+            case other:
+                raw = str(other)
+        attrs[f"data-signal:{name}"] = f"{codec}|={raw}"
 
     return Template(*children, **attrs)
 

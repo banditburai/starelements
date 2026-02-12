@@ -2,6 +2,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _TAG_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)+$")
 
@@ -19,6 +20,8 @@ class ElementDef:
     dimensions: dict[str, str] = field(default_factory=dict)
     skeleton: bool = False
     static_path: Path | None = None  # For consistency with PluginDef
+    signals: dict[str, tuple] = field(default_factory=dict)  # {name: (initial, type)}
+    methods: tuple[str, ...] = field(default_factory=tuple)  # snake_case names
 
     def __post_init__(self):
         self._validate_tag_name()
@@ -61,12 +64,50 @@ class ElementDef:
                 )
 
 
+def _snake2camel(s: str) -> str:
+    parts = s.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
 class ElementInstance:
-    """Produces minimal HTML (just the tag + attrs). JS clones content from template."""
+    """Produces minimal HTML (just the tag + attrs). JS clones content from template.
+
+    When created with ``name=``, also acts as a ref provider: attribute access
+    returns Signal refs (for reactive state) and method refs (via data-ref).
+    """
 
     def __init__(self, elem_def: ElementDef, **kwargs):
         self.elem_def = elem_def
+        self._name = kwargs.pop("name", None)
         self.attrs = kwargs
+        self._refs: dict[str, Any] = {}
+
+        if self._name:
+            from starhtml.datastar import Signal, js
+
+            # Datastar's data-ref creates $name holding the DOM element
+            self.attrs.setdefault("data_ref", self._name)
+            self.attrs.setdefault("signal", self._name)
+
+            # Full Signal objects preserve initial values for FOUC prevention
+            for sig_name, (initial, type_) in elem_def.signals.items():
+                self._refs[sig_name] = Signal(f"{self._name}_{sig_name}", initial, _ref_only=True, type_=type_)
+
+            for method in elem_def.methods:
+                self._refs[method] = js(f"${self._name}.{_snake2camel(method)}")
+
+    def __getattr__(self, attr: str):
+        if attr.startswith("_"):
+            raise AttributeError(f"'{type(self).__name__}' has no attribute '{attr}'")
+        if attr in self._refs:
+            return self._refs[attr]
+        raise AttributeError(f"Component '{self.elem_def.tag_name}' has no signal or method '{attr}'")
+
+    def signal(self, name: str, initial=None, **kw):
+        """Create a namespaced Signal ref scoped to this component instance."""
+        from starhtml.datastar import Signal
+
+        return Signal(f"{self._name}_{name}", initial, _ref_only=True, **kw)
 
     @property
     def tag_name(self) -> str:

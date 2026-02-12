@@ -28,6 +28,8 @@ def element(
     import_map: dict[str, str] | None = None,
     scripts: dict[str, str] | None = None,
     events: list[str] | None = None,
+    signals: dict[str, tuple] | None = None,
+    methods: tuple[str, ...] | None = None,
 ):
     if dimensions:
         normalized_dims = {k.replace("_", "-"): v for k, v in dimensions.items()}
@@ -59,6 +61,8 @@ def element(
             dimensions=normalized_dims,
             skeleton=use_skeleton,
             static_path=resolved_static,
+            signals=signals or {},
+            methods=methods or (),
         )
 
         class ElementFactory:
