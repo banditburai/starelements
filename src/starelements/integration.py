@@ -25,7 +25,7 @@ def _value_to_js(value: Any) -> str:
         from starhtml.datastar import _safe_js_string
 
         return _safe_js_string(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return str(value)
     if isinstance(value, dict):
         return "{" + ", ".join(f"{k}: {_value_to_js(v)}" for k, v in value.items()) + "}"

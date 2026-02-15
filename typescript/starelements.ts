@@ -101,28 +101,33 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
     }
 
     async connectedCallback(): Promise<void> {
-      await this._loadImports();
-      if (!this.isConnected) return; // Disconnected during async import loading
-      this._signalValues = this._buildSignalValues();
+      try {
+        await this._loadImports();
+        if (!this.isConnected) return; // Disconnected during async import loading
+        this._signalValues = this._buildSignalValues();
 
-      if (!this._hydrating) {
-        const content = template.content.cloneNode(true) as DocumentFragment;
-        for (const s of content.querySelectorAll("script")) s.remove();
-        this._rewriteSignals(content);
+        if (!this._hydrating) {
+          const content = template.content.cloneNode(true) as DocumentFragment;
+          for (const s of content.querySelectorAll("script")) s.remove();
+          this._rewriteSignals(content);
 
-        if (useShadow) {
-          this.attachShadow({ mode: shadowMode }).appendChild(content);
-        } else {
-          this.appendChild(content);
+          if (useShadow) {
+            this.attachShadow({ mode: shadowMode }).appendChild(content);
+          } else {
+            this.appendChild(content);
+          }
         }
-      }
 
-      this._initSignals();
-      this._triggerDatastarScan();
-      this._runSetup(setupCode);
-      this._connected = true;
-      this.style.visibility = "";
-      this.setAttribute("data-star-ready", "");
+        this._initSignals();
+        this._triggerDatastarScan();
+        this._runSetup(setupCode);
+      } catch (e) {
+        console.error(`[starelements] connectedCallback error in <${name}>:`, e);
+      } finally {
+        this._connected = true;
+        this.style.visibility = "";
+        this.setAttribute("data-star-ready", "");
+      }
     }
 
     disconnectedCallback(): void {
@@ -213,11 +218,17 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
         Object.entries(this._signalValues).map(([k, v]) => [`${this._namespace}_${k}`, v])
       );
       mergePatch(signalData);
-      // Encode strings containing @ or $ as atob() to prevent
-      // Datastar's expression preprocessor from mangling them
+      // Escape @ and $ in strings to prevent Datastar's expression preprocessor
+      // from mangling them ($foo → signal ref, @foo → action ref).
+      // Using \uXXXX escapes inside JSON strings keeps them inert.
+      const safeStringify = (s: string): string => {
+        return JSON.stringify(s).replace(/[$@]/g, (ch) =>
+          `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`
+        );
+      };
       const parts = Object.entries(signalData).map(([key, value]) => {
         const jsVal = typeof value === "string" && /[@$]/.test(value)
-          ? `atob("${btoa(value)}")`
+          ? safeStringify(value)
           : JSON.stringify(value);
         return `"${key}":${jsVal}`;
       });
