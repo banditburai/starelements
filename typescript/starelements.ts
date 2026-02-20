@@ -4,7 +4,7 @@
  *   $signal  - Global (page-level, passed through unchanged)
  */
 
-import { effect, mergePatch, getPath } from "datastar";
+import { effect, mergePatch, getPath, beginBatch, endBatch } from "datastar";
 
 type ParserFn = (v: string | boolean) => unknown;
 
@@ -17,8 +17,8 @@ const globalWindow = window as unknown as Record<string, unknown>;
 
 let instanceCounter = 0;
 
-const toCamelCase = (s: string): string =>
-  s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+const toCamelCase = (s: string) =>
+  s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 
 const extractPrefixedAttrs = (
   el: Element,
@@ -81,19 +81,17 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
 
     _namespace: string;
     _hydrating: boolean;
-    _cleanups: Array<() => void>;
-    _imports: Record<string, unknown>;
-    _connected: boolean;
-    _signalValues!: Record<string, unknown>;
+    _cleanups: Array<() => void> = [];
+    _imports: Record<string, unknown> = {};
+    _connected = false;
+    _shadow: ShadowRoot | null;
 
     constructor() {
       super();
       const serverId = this.getAttribute("data-star-id");
       this._namespace = serverId || `_star_${name.replace(/-/g, "_")}_id${instanceCounter++}`;
       this._hydrating = !!serverId;
-      this._cleanups = [];
-      this._imports = {};
-      this._connected = false;
+      this._shadow = useShadow ? this.attachShadow({ mode: shadowMode }) : null;
     }
 
     _namespaceSignalRefs(text: string): string {
@@ -103,34 +101,38 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
     async connectedCallback(): Promise<void> {
       try {
         await this._loadImports();
-        if (!this.isConnected) return; // Disconnected during async import loading
-        this._signalValues = this._buildSignalValues();
+        if (!this.isConnected) return;
+        const signalValues = this._buildSignalValues();
 
         if (!this._hydrating) {
           const content = template.content.cloneNode(true) as DocumentFragment;
           for (const s of content.querySelectorAll("script")) s.remove();
           this._rewriteSignals(content);
-
-          if (useShadow) {
-            this.attachShadow({ mode: shadowMode }).appendChild(content);
-          } else {
-            this.appendChild(content);
-          }
+          (useShadow ? this._shadow! : this).appendChild(content);
         }
 
-        this._initSignals();
-        this._triggerDatastarScan();
-        this._runSetup(setupCode);
-      } catch (e) {
-        console.error(`[starelements] connectedCallback error in <${name}>:`, e);
-      } finally {
+        // Batch the entire initialization so effects created by setup don't
+        // fire until after the Datastar scan completes — matching how Datastar
+        // batches its own initial page scan internally.
+        beginBatch();
+        try {
+          this._initSignals(signalValues);
+          this._runSetup(setupCode);
+          this._triggerDatastarScan();
+        } finally {
+          endBatch();
+        }
+
         this._connected = true;
         this.style.visibility = "";
         this.setAttribute("data-star-ready", "");
+      } catch (e) {
+        console.error(`[starelements] connectedCallback error in <${name}>:`, e);
       }
     }
 
     disconnectedCallback(): void {
+      this._connected = false;
       for (const fn of this._cleanups) {
         try { fn(); } catch (e) { console.error(e); }
       }
@@ -158,8 +160,10 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
         this._imports[alias] = globalWindow[alias];
       }
 
+      // Libraries expose globals inconsistently (e.g., Plotly vs plotly vs PIXI),
+      // so check common casing variants.
       const findGlobal = (alias: string): unknown => {
-        const pascal = alias.charAt(0).toUpperCase() + alias.slice(1);
+        const pascal = alias[0].toUpperCase() + alias.slice(1);
         return globalWindow[alias] || globalWindow[pascal] || globalWindow[alias.toUpperCase()];
       };
       for (const [alias, url] of Object.entries(scripts)) {
@@ -177,55 +181,54 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
     }
 
     _rewriteSignals(node: Node): void {
-      const walk = (el: Node): void => {
-        if ((el as Element).attributes) {
+      const COMPUTED = "data-computed:";
+      const walk = (n: Node): void => {
+        if (n.nodeType === Node.ELEMENT_NODE) {
+          const el = n as Element;
           const renames: Array<[string, string, string]> = [];
-          for (const attr of (el as Element).attributes) {
+          for (const attr of el.attributes) {
             if (attr.name === "data-ref" && attr.value) {
               attr.value = `${this._namespace}_${attr.value}`;
             }
-            else if (attr.name.startsWith("data-computed:")) {
-              const signalName = attr.name.slice("data-computed:".length);
-              const newName = `data-computed:${this._namespace}_${signalName}`;
-              const newValue = this._namespaceSignalRefs(attr.value);
-              renames.push([attr.name, newName, newValue]);
+            else if (attr.name.startsWith(COMPUTED)) {
+              const signalName = attr.name.slice(COMPUTED.length);
+              renames.push([attr.name, `${COMPUTED}${this._namespace}_${signalName}`, this._namespaceSignalRefs(attr.value)]);
             }
             else if (attr.value.includes("$$")) {
               attr.value = this._namespaceSignalRefs(attr.value);
             }
           }
           for (const [oldName, newName, newValue] of renames) {
-            (el as Element).removeAttribute(oldName);
-            (el as Element).setAttribute(newName, newValue);
+            el.removeAttribute(oldName);
+            el.setAttribute(newName, newValue);
           }
         }
-        for (const child of el.childNodes) walk(child);
+        for (const child of n.childNodes) walk(child);
       };
       walk(node);
     }
 
     _buildSignalValues(): Record<string, unknown> {
-      const values: Record<string, unknown> = {};
-      for (const [name, def] of Object.entries(signals)) {
-        const attr = this.getAttribute(name);
-        values[toCamelCase(name)] = attr !== null ? def.parse(attr) : def.default;
-      }
-      return values;
+      return Object.fromEntries(
+        Object.entries(signals).map(([attr, def]) => {
+          const val = this.getAttribute(attr);
+          return [toCamelCase(attr), val !== null ? def.parse(val) : def.default];
+        })
+      );
     }
 
-    _initSignals(): void {
+    _initSignals(signalValues: Record<string, unknown>): void {
       const signalData: Record<string, unknown> = Object.fromEntries(
-        Object.entries(this._signalValues).map(([k, v]) => [`${this._namespace}_${k}`, v])
+        Object.entries(signalValues).map(([k, v]) => [`${this._namespace}_${k}`, v])
       );
       mergePatch(signalData);
       // Escape @ and $ in strings to prevent Datastar's expression preprocessor
       // from mangling them ($foo → signal ref, @foo → action ref).
       // Using \uXXXX escapes inside JSON strings keeps them inert.
-      const safeStringify = (s: string): string => {
-        return JSON.stringify(s).replace(/[$@]/g, (ch) =>
+      const safeStringify = (s: string) =>
+        JSON.stringify(s).replace(/[$@]/g, (ch) =>
           `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`
         );
-      };
       const parts = Object.entries(signalData).map(([key, value]) => {
         const jsVal = typeof value === "string" && /[@$]/.test(value)
           ? safeStringify(value)
@@ -236,18 +239,17 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
     }
 
     _removeSignals(): void {
-      // null values delete keys per JSON Merge Patch (RFC 7386) semantics
-      const patch: Record<string, null> = {};
-      for (const name of Object.keys(signals)) {
-        patch[`${this._namespace}_${toCamelCase(name)}`] = null;
-      }
-      mergePatch(patch);
+      // null deletes keys per JSON Merge Patch (RFC 7386)
+      mergePatch(Object.fromEntries(
+        Object.keys(signals).map(s => [`${this._namespace}_${toCamelCase(s)}`, null])
+      ));
     }
 
     _runSetup(code: string): void {
       if (!code.trim()) return;
+      const queryRoot = useShadow ? this._shadow! : (this as Element);
       const refs = (refName: string): Element | null =>
-        this.querySelector(`[data-ref="${this._namespace}_${refName}"]`);
+        queryRoot.querySelector(`[data-ref="${this._namespace}_${refName}"]`);
 
       const namespace = this._namespace;
       const sp = new Proxy({} as Record<string | symbol, unknown>, {
@@ -270,7 +272,6 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
         }
       });
 
-      // Auto-capture effect dispose functions so they're cleaned up on disconnect
       const trackedEffect = (fn: () => void | (() => void)) => {
         const dispose = effect(fn);
         this._cleanups.push(dispose);
@@ -292,9 +293,10 @@ function registerStarElement(name: string, template: HTMLTemplateElement): void 
       }
     }
 
-    // Web components insert DOM after Datastar's initial scan; re-trigger to process new data-* attrs
+    // Web components insert DOM after Datastar's initial scan; re-trigger to process new data-* attrs.
     _triggerDatastarScan(): void {
-      this.dispatchEvent(new CustomEvent("datastar:scan", { bubbles: true, detail: { root: this } }));
+      const scanRoot = useShadow ? this._shadow! : this;
+      this.dispatchEvent(new CustomEvent("datastar:scan", { bubbles: true, composed: true, detail: { root: scanRoot } }));
     }
 
     emit(eventName: string, detail?: unknown): void {
