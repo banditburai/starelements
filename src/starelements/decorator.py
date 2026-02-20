@@ -71,9 +71,7 @@ def element(
             _static_path = resolved_static
 
             def __new__(cls_inner, **kwargs):
-                if kwargs:
-                    return ElementInstance(elem_def, **kwargs)
-                return object.__new__(cls_inner)
+                return ElementInstance(elem_def, **kwargs)
 
             @classmethod
             def get_package_name(cls) -> str:
@@ -91,18 +89,17 @@ def element(
 
             @classmethod
             def get_import_map(cls, pkg_prefix: str) -> dict[str, str]:
-                """Import map entries needed by this component."""
-                entries = {}
-                if elem_def.import_map:
-                    entries.update(elem_def.import_map)
-                for alias, specifier in elem_def.imports.items():
-                    if specifier.startswith(("http://", "https://", "/")):
-                        entries[alias] = specifier
-                return entries
+                return {
+                    **elem_def.import_map,
+                    **{
+                        alias: spec
+                        for alias, spec in elem_def.imports.items()
+                        if spec.startswith(("http://", "https://", "/"))
+                    },
+                }
 
             @classmethod
             def get_dependencies(cls) -> list[tuple[str, Path]]:
-                """Runtime dependencies whose static files must be served."""
                 from .integration import get_static_path as _get_se_static
 
                 return [("starelements", _get_se_static())]
